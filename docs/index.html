@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>铁与王冠 · 序章</title>
+<style>
+  :root{
+    --ink:#0b0907; --parch:#d8c29a; --parch-dim:#9f8a68; --gold:#d8b363;
+    --gold-bright:#f2d792; --crimson:#7f2d28; --line:rgba(216,179,99,.26);
+    --display:"Noto Serif SC","Songti SC","STSong","SimSun",serif;
+    --en:"Cinzel","Trajan Pro","Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--parch); font-family:var(--display); overflow-x:hidden;
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(164,116,52,.16), transparent 60%),
+      radial-gradient(ellipse at 85% 100%, rgba(103,29,27,.18), transparent 55%),
+      linear-gradient(180deg,#12100b,#080706 70%,#050403);
+    min-height:100vh; display:grid; place-items:center; padding:32px 20px;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; opacity:.5;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(255,220,150,.05) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 70% 60%, rgba(255,220,150,.04) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 40% 80%, rgba(255,220,150,.035) 0 1px, transparent 1.6px);
+    background-size:120px 120px,180px 180px,240px 240px;
+  }
+  body::after{
+    content:""; position:fixed; inset:0; pointer-events:none;
+    box-shadow:inset 0 0 180px 60px rgba(0,0,0,.78);
+  }
+  .shell{width:min(1120px,100%); position:relative; z-index:1}
+  .topline{display:flex; align-items:center; gap:16px; color:var(--parch-dim); font-size:10px; letter-spacing:.34em; text-transform:uppercase; margin-bottom:18px}
+  .topline i{display:block; height:1px; flex:1; background:linear-gradient(90deg,transparent,var(--line),transparent)}
+  .topline em{font-style:normal; color:#b99a62; white-space:nowrap}
+  .frame{
+    position:relative; border:1px solid var(--line);
+    background:
+      linear-gradient(135deg, rgba(255,225,160,.035), transparent 35%),
+      linear-gradient(180deg, rgba(31,25,17,.92), rgba(13,11,8,.96));
+    box-shadow:0 30px 80px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,230,170,.035);
+    padding:clamp(24px,4vw,54px);
+  }
+  .frame::before,.frame::after{content:""; position:absolute; width:26px; height:26px; border:1px solid var(--gold); opacity:.55; pointer-events:none}
+  .frame::before{left:9px; top:9px; border-right:0; border-bottom:0}
+  .frame::after{right:9px; bottom:9px; border-left:0; border-top:0}
+  .crest{display:block; width:64px; height:64px; margin:0 auto 10px; color:var(--gold); filter:drop-shadow(0 0 18px rgba(216,179,99,.22))}
+  .chapter-kicker{display:block; text-align:center; font-size:10px; letter-spacing:.42em; color:#a98d5c; text-transform:uppercase; margin-bottom:8px}
+  h1{
+    margin:0; text-align:center; font-weight:400; line-height:1.1;
+    font-size:clamp(34px,5vw,64px); letter-spacing:.12em; color:#f0dbab;
+    text-shadow:0 0 30px rgba(216,179,99,.18), 0 3px 0 rgba(0,0,0,.5);
+  }
+  h1 span{color:var(--gold-bright)}
+  .title-en{text-align:center; margin:12px 0 0; font-family:var(--en); font-size:10px; letter-spacing:.52em; color:#8e764e}
+  .rule{display:flex; align-items:center; gap:12px; margin:26px auto 22px; max-width:420px; color:var(--gold)}
+  .rule i{height:1px; flex:1; background:linear-gradient(90deg,transparent,var(--line))}
+  .rule i:last-child{background:linear-gradient(90deg,var(--line),transparent)}
+  .rule b{font-size:9px; letter-spacing:.24em; font-weight:400; opacity:.8}
+  .story{max-width:760px; margin:0 auto; font-size:clamp(13px,1.5vw,15px); line-height:2.05; color:#cbb894; letter-spacing:.03em}
+  .story p{margin:0 0 14px; text-indent:2em}
+  .story p:first-child::first-letter{
+    float:left; font-size:3.3em; line-height:.9; padding:6px 8px 0 0;
+    color:var(--gold-bright); font-family:var(--display);
+  }
+  .story b{color:#eed9a8; font-weight:500}
+  .quote{
+    margin:22px auto 0; max-width:680px; padding:15px 22px; border-left:2px solid var(--crimson);
+    background:linear-gradient(90deg, rgba(127,45,40,.12), transparent);
+    color:#b9a077; font-size:12px; line-height:1.8; letter-spacing:.06em;
+  }
+  .quote em{color:#e7cf9d; font-style:normal}
+  .lower{display:grid; grid-template-columns:1fr auto; gap:28px; align-items:end; margin-top:30px; padding-top:22px; border-top:1px solid rgba(216,179,99,.13)}
+  .brief{min-width:0}
+  .brief small{display:block; font-size:9px; letter-spacing:.22em; color:#8f7955; margin-bottom:8px}
+  .brief p{margin:0; font-size:11px; line-height:1.75; color:#9b8765; max-width:560px}
+  .brief .chapters{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px}
+  .brief .chapters span{font-size:9px; color:#8f7955; border:1px solid rgba(216,179,99,.14); padding:3px 7px; letter-spacing:.04em}
+  .brief .chapters span:first-child{color:#e5cb94; border-color:rgba(216,179,99,.4)}
+  .actions{display:flex; flex-direction:column; align-items:stretch; gap:12px; min-width:250px}
+  .difficulty{display:grid; grid-template-columns:repeat(3,1fr); gap:6px}
+  .diff-option{
+    cursor:pointer; padding:8px 4px 7px; border:1px solid rgba(216,179,99,.2);
+    background:rgba(0,0,0,.26); color:#8f7955; font-family:var(--display); transition:.18s ease;
+  }
+  .diff-option b{display:block; font-size:12px; font-weight:400; letter-spacing:.08em}
+  .diff-option span{display:block; font-size:8px; margin-top:4px; letter-spacing:.04em; color:#6f6048}
+  .diff-option:hover{border-color:#b4945b; color:#d9c094}
+  .diff-option.active{border-color:var(--gold); color:#f0dbaa; background:linear-gradient(180deg,rgba(107,77,37,.35),rgba(0,0,0,.28)); box-shadow:inset 0 0 0 1px rgba(255,226,160,.08)}
+  .diff-option.active span{color:#b79b6b}
+  .ally-option{
+    cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:14px;
+    padding:9px 12px; border:1px solid rgba(105,179,145,.2); background:rgba(20,44,34,.22);
+    color:#8db29a; font-family:var(--display); text-align:left; transition:.18s ease;
+  }
+  .ally-option b{font-size:12px; font-weight:400; letter-spacing:.1em}
+  .ally-option span{font-size:8px; letter-spacing:.04em; color:#587463}
+  .ally-option:hover{border-color:rgba(125,205,166,.45); color:#c3e8d2}
+  .ally-option.active{border-color:rgba(137,220,178,.58); color:#c9f0da; background:linear-gradient(180deg,rgba(61,126,96,.24),rgba(15,35,26,.2))}
+  .ally-option.active span{color:#8ec3a4}
+  .play{
+    position:relative; display:block; text-decoration:none; text-align:center; padding:15px 20px 13px;
+    border:1px solid #e0bd75; color:#1a1209; overflow:hidden;
+    background:linear-gradient(180deg,#f0d392,#c99d50 55%,#a87a34);
+    box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.45);
+    transition:transform .16s ease, box-shadow .16s ease;
+  }
+  .play:hover{transform:translateY(-2px); box-shadow:0 12px 30px rgba(0,0,0,.45), 0 0 30px rgba(216,179,99,.16), inset 0 1px 0 rgba(255,255,255,.5)}
+  .play b{display:block; font-size:20px; letter-spacing:.28em; font-weight:500; padding-left:.28em}
+  .play small{display:block; margin-top:5px; font-family:var(--en); font-size:8px; letter-spacing:.3em; color:#4a3418}
+  .play::after{content:""; position:absolute; top:0; left:-60%; width:40%; height:100%; transform:skewX(-20deg); background:linear-gradient(90deg,transparent,rgba(255,255,255,.34),transparent); animation:sheen 4.5s ease-in-out infinite}
+  @keyframes sheen{0%,55%{left:-60%}80%,100%{left:130%}}
+  .foot{margin-top:12px; text-align:center; font-size:8px; color:#6f6048; letter-spacing:.06em}
+  @media (max-width:820px){
+    body{padding:20px 12px; align-items:start}
+    .story{font-size:13px; line-height:1.95}
+    .lower{grid-template-columns:1fr; align-items:stretch}
+    .actions{min-width:0}
+  }
+  @media (max-width:430px){
+    .topline em{font-size:8px; letter-spacing:.2em}
+    .frame{padding:24px 16px 20px}
+    .actions{position:sticky; bottom:0}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topline"><i></i><em>IRON &amp; CROWN · PROLOGUE</em><i></i></div>
+  <main class="frame">
+    <svg class="crest" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <path d="M32 4 55 13v19c0 14-9 23-23 28C18 55 9 46 9 32V13L32 4Z" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M32 12 47 18v14c0 9-6 16-15 20-9-4-15-11-15-20V18l15-6Z" stroke="currentColor" stroke-width="1" opacity=".55"/>
+      <path d="m22 30 5-7 5 5 5-10 5 10 5-5 5 7-15 4-15-4Z" fill="currentColor" opacity=".9"/>
+      <path d="M32 40v10M27 45h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+
+    <span class="chapter-kicker">序 章 · 王 座 蒙 尘</span>
+    <h1>灰烬中的<span>王冠</span></h1>
+    <p class="title-en">THE CROWN IN ASHES</p>
+    <div class="rule"><i></i><b>赤 蔷 薇 纪 年</b><i></i></div>
+
+    <section class="story">
+      <p>黑鸦公国的铁蹄踏碎了边境的最后一盏灯。村庄在夜里燃烧，矿井被铁链封死，赤蔷薇的旗帜被扯下城墙，扔进泥泞。</p>
+      <p>老国王在空荡的王座厅里咽下最后一口气。王冠从台阶上滚落，沾满灰烬。黑鸦的领主没有追来，他只留下一句话：<b>“赤蔷薇已经流干了血。”</b></p>
+      <p>但黎明之前，你回来了。你是赤蔷薇最后的血脉，身后只有三名农民、几队残兵，和一面褪色的旗。矿脉还在，土地还在，王座厅的断墙也还在。</p>
+      <p>夺回金矿，重建兵营，让长矛与弩矢重新列阵。黑鸦有重甲、巫师与攻城队；你有一顶尚未熄灭的王冠。</p>
+    </section>
+
+    <blockquote class="quote"><em>“王冠不选择主人，它只追随能守住它的人。”</em><br>—— 赤蔷薇旧誓</blockquote>
+
+    <div class="lower">
+      <div class="brief">
+        <small>战 役 简 报</small>
+        <p>五章战役 · 五张不同地形 · 十二种初始部队与工事 · 四种章节新军备。选择你的统治难度，然后率军踏入故土。</p>
+        <div class="chapters">
+          <span>序章</span><span>边境劫掠</span><span>铁鸦重甲</span><span>群鸦奔袭</span><span>瘟疫投石</span><span>黑鸦之王</span>
+        </div>
+      </div>
+      <div class="actions">
+        <div class="difficulty" role="group" aria-label="难度选择">
+          <button class="diff-option" data-diff="squire"><b>侍从</b><span>轻松经营</span></button>
+          <button class="diff-option active" data-diff="knight"><b>骑士</b><span>标准战役</span></button>
+          <button class="diff-option" data-diff="king"><b>国王</b><span>严酷围城</span></button>
+        </div>
+        <button class="ally-option" id="ally-toggle" type="button">
+          <b>青杉盟军 · AI 队友</b><span>自行出兵 / 共享视野</span>
+        </button>
+        <a class="play" id="play" href="game.html?autostart=1&amp;diff=knight">
+          <b>打 开 游 戏</b>
+          <small>ENTER THE REALM</small>
+        </a>
+        <div class="foot">点击后直接进入战场 · 无需安装</div>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+  (function(){
+    var diff='knight';
+    var ally=false;
+    var play=document.getElementById('play');
+    var allyToggle=document.getElementById('ally-toggle');
+    var options=document.querySelectorAll('.diff-option');
+    function updateLink(){
+      play.href='game.html?autostart=1&diff='+encodeURIComponent(diff)+(ally?'&ally=1':'');
+    }
+    options.forEach(function(btn){
+      btn.addEventListener('click',function(){
+        diff=btn.dataset.diff;
+        options.forEach(function(b){b.classList.toggle('active',b===btn)});
+        updateLink();
+      });
+    });
+    allyToggle.addEventListener('click',function(){
+      ally=!ally;
+      allyToggle.classList.toggle('active',ally);
+      updateLink();
+    });
+    updateLink();
+  })();
+</script>
+</body>
+</html>

@@ -13,12 +13,14 @@
 
 | 方式 | 做法 |
 | --- | --- |
-| **直接玩（推荐）** | 到 [Releases](../../releases) 下载 `IronCrown-1.0.0-win64.zip`，解压后双击 `IronCrown.exe` |
+| **在线试玩（最快）** | 打开 **https://gggg2456.github.io/iron-crown/** ，选难度即可开战，无需下载 |
+| **直接玩（完整版）** | 到 [Releases](https://github.com/gggg2456/iron-crown/releases) 下载 `IronCrown-1.0.0-win64.zip`，解压后双击 `IronCrown.exe` |
 | **源码运行** | `npm install` → `npm start` |
-| **浏览器预览** | 直接用浏览器打开 `web/story.html`，无需任何构建 |
+| **本地免安装预览** | 直接用浏览器打开 `web/story.html`，无需任何构建 |
 
 - 运行环境：Windows 10 / 11 x64；独立版解压后约 358 MB，免安装、全程离线。
 - 源码运行需要 Node.js 20+（固定 Electron 45.3.4）。
+- 在线版与独立版是同一份 `game.js`，区别只有窗口外壳：在线版受浏览器限制，全屏/存档类行为以浏览器为准。
 
 ## 玩法概览
 
@@ -142,29 +144,32 @@
 .
 ├─ main.js               Electron 主进程（窗口、菜单、外链拦截）
 ├─ package.json
-├─ web/                  游戏前端，可直接用浏览器打开 story.html 试玩
+├─ web/                  游戏前端（源码，可直接用浏览器打开 story.html 试玩）
 │  ├─ story.html         序章 / 难度与盟军选择
 │  ├─ index.html         战场主界面
 │  ├─ game.js            全部游戏逻辑
 │  ├─ style.css          界面样式
 │  ├─ iron-crown.ico     图标
 │  └─ audio/voices/      选中 / 移动 / 攻击 / 受击 语音
+├─ docs/                 GitHub Pages 站点（由 tools/build-pages.ps1 生成，勿手改）
 └─ tools/
-   └─ package.ps1        一键构建独立版 + 发布 zip
+   ├─ package.ps1        一键构建独立版 + 发布 zip
+   └─ build-pages.ps1    从 web/ 生成 docs/ 站点
 ```
 
 ## 重新打包
 
 ```powershell
 npm install
-npm run package        # 输出 dist\IronCrown-win32-x64\
-npm run dist           # 额外压出 dist\IronCrown-1.0.0-win64.zip
+npm run package                      # 输出 dist\IronCrown-win32-x64\
+npm run dist                         # 额外压出 dist\IronCrown-1.0.0-win64.zip
+powershell -File tools\build-pages.ps1   # 改了 web/ 之后重建在线版站点
 ```
 
 ## 授权
 
 游戏代码、美术、音频与文案版权归作者所有，以 source-available 形式公开，**并非开源许可**；
-未经许可不可再分发或商用。详见 [LICENSE](LICENSE)。
+未经许可不可再分发或商用。详见 [LICENSE](https://github.com/gggg2456/iron-crown/blob/main/LICENSE)。
 
 - Electron 及其 Chromium 组件为 MIT 许可，独立版发行包内保留完整的 `LICENSE` 与 `LICENSES.chromium.html`。
 - 单位语音由 Windows 中文语音合成（Microsoft Huihui）离线生成，商用前请自行确认语音授权。
