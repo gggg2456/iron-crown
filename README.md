@@ -154,7 +154,8 @@
 ├─ docs/                 GitHub Pages 站点（由 tools/build-pages.ps1 生成，勿手改）
 └─ tools/
    ├─ package.ps1        一键构建独立版 + 发布 zip
-   └─ build-pages.ps1    从 web/ 生成 docs/ 站点
+   ├─ build-pages.ps1    从 web/ 生成 docs/ 站点
+   └─ publish/           无 git 环境下的 REST 发布脚本（start-login / poller / push / meta）
 ```
 
 ## 重新打包
@@ -166,6 +167,16 @@ npm run dist                         # 额外压出 dist\IronCrown-1.0.0-win64.z
 powershell -File tools\build-pages.ps1   # 改了 web/ 之后重建在线版站点
 ```
 
+## 发布到 GitHub（无需 git）
+
+本机没有 git / gh 也能发版：`tools/publish/` 直接走 GitHub REST API（blob → tree → commit → ref → Release）。
+
+1. `powershell -File tools\publish\start-login.ps1` —— 打印一次性设备码，浏览器授权后 token 落到 `%USERPROFILE%\.ironcrown-secrets\token.json`
+2. `powershell -File tools\publish\poller.ps1` —— 轮询直到输出 `AUTH_OK`（可放后台）
+3. `powershell -File tools\publish\push.ps1 -SkipRelease` —— 只推代码
+4. `npm run dist` 之后再跑 `powershell -File tools\publish\push.ps1` —— 顺带把 zip 传成 Release 附件
+
+脚本会自动跳过 `dist/`、`node_modules/`、`.git/`、`*.zip` 与截图；仓库描述、提交信息、Release 文案在 `tools/publish/meta.json`（UTF-8），支持 `{SIZE_MB}` `{SHA256}` `{LOGIN}` `{REPO}` 占位符。
 ## 授权
 
 游戏代码、美术、音频与文案版权归作者所有，以 source-available 形式公开，**并非开源许可**；
