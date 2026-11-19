@@ -1266,8 +1266,34 @@ function clampCamera() {
   S.cam.x = clamp(S.cam.x, pad - MAP_PX_W * S.cam.z, VW - pad);
   S.cam.y = clamp(S.cam.y, pad - MAP_PX_H * S.cam.z, VH - pad);
 }
+const EDGE_TRIGGER = 26, EDGE_BOOST = 1.15;
+function edgePan(dt) {
+  if (!S.mouse.inside) return;
+  if (S.drag && S.drag.active) return;
+  const sp = 520 * dt / S.cam.z;
+  const rightLimit = VW - sidebarWidth() - 8;
+  const topLimit = 92, bottomLimit = VH - 54;
+  const mx = clamp(S.mouse.x, 0, VW), my = clamp(S.mouse.y, 0, VH);
+  if (mx > rightLimit) return;
+  if (mx > rightLimit - EDGE_TRIGGER) {
+    const t = clamp((mx - (rightLimit - EDGE_TRIGGER)) / EDGE_TRIGGER, 0, 1);
+    S.cam.x -= sp * t * EDGE_BOOST;
+  } else if (mx < EDGE_TRIGGER) {
+    const t = clamp((EDGE_TRIGGER - mx) / EDGE_TRIGGER, 0, 1);
+    S.cam.x += sp * t * EDGE_BOOST;
+  }
+  if (my > bottomLimit) return;
+  if (my > bottomLimit - EDGE_TRIGGER) {
+    const t = clamp((my - (bottomLimit - EDGE_TRIGGER)) / EDGE_TRIGGER, 0, 1);
+    S.cam.y -= sp * t * EDGE_BOOST;
+  } else if (my < topLimit + EDGE_TRIGGER && my > topLimit) {
+    const t = clamp((topLimit + EDGE_TRIGGER - my) / EDGE_TRIGGER, 0, 1);
+    S.cam.y += sp * t * EDGE_BOOST;
+  }
+}
 function updateCamera(dt) {
   if (S.mode === 'menu' || S.mode === 'ended' || S.paused) return;
+  if (S.mode === 'playing') edgePan(dt);
   if (S.tour) {
     S.tour.t += dt / .65;
     const t = Math.min(1, S.tour.t), e = 1 - Math.pow(1 - t, 3);
@@ -4799,7 +4825,10 @@ if (params.get('debug') === '1') {
       theme: S.mapTheme,
       wave: Math.round(S.wave.timer),
       enemySuperBuilding: S.buildings.some(b => b.team === ENEMY && SUPER_BUILDINGS.has(b.type)),
-      unlocked: S.unlocked.size
+      unlocked: S.unlocked.size,
+      sidebar: Math.round(sidebarWidth()),
+      cam: [Math.round(S.cam.x), Math.round(S.cam.y)],
+      edgeDelta: window.__edgeDelta || 0
     });
   };
   window.__dbgUpdate();
@@ -4816,6 +4845,16 @@ if (params.has('autostart')) {
   startGame();
 }
 // 调试用：?warp=秒数 直接把模拟推进若干秒，便于无头测试检查奖励箱、波次等随时间发生的行为。
+const edgeTest = params.get('edgepan');
+if (edgeTest && S.mode === 'playing') {
+  const x0 = S.cam.x;
+  S.mouse.inside = true;
+  S.mouse.x = edgeTest === 'far' ? VW - 100 : (VW - sidebarWidth() - 12);
+  S.mouse.y = VH / 2;
+  for (let i = 0; i < 30; i++) updateCamera(1 / 30);
+  window.__edgeDelta = Math.round(S.cam.x - x0);
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
 const warpSec = parseFloat(params.get('warp') || '0');
 if (Number.isFinite(warpSec) && warpSec > 0 && S.mode === 'playing') {
   const steps = Math.min(4000, Math.round(warpSec * 20));
