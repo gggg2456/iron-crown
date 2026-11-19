@@ -115,6 +115,32 @@
   .play::after{content:""; position:absolute; top:0; left:-60%; width:40%; height:100%; transform:skewX(-20deg); background:linear-gradient(90deg,transparent,rgba(255,255,255,.34),transparent); animation:sheen 4.5s ease-in-out infinite}
   @keyframes sheen{0%,55%{left:-60%}80%,100%{left:130%}}
   .foot{margin-top:12px; text-align:center; font-size:8px; color:#6f6048; letter-spacing:.06em}
+  .mode-tabs{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+  .mode-tab{cursor:pointer; padding:9px 4px 8px; border:1px solid rgba(216,179,99,.18); background:rgba(0,0,0,.3);
+    font-family:var(--display); color:#8f7955; transition:.18s ease}
+  .mode-tab b{display:block; font-size:13px; font-weight:400; letter-spacing:.12em}
+  .mode-tab span{display:block; margin-top:4px; font-size:8px; letter-spacing:.05em; color:#6f6048}
+  .mode-tab:hover{border-color:#b4945b; color:#d9c094}
+  .mode-tab.active{border-color:var(--gold); color:#f0dbaa; background:linear-gradient(180deg,rgba(107,77,37,.34),rgba(0,0,0,.28))}
+  .mode-tab.active span{color:#b79b6b}
+  .skirmish-config{display:flex; flex-direction:column; gap:8px; padding:10px 12px;
+    border:1px solid rgba(216,179,99,.16); background:rgba(0,0,0,.24)}
+  .cfg-row{display:flex; align-items:center; justify-content:space-between; gap:10px}
+  .cfg-row>span{font-size:9px; letter-spacing:.14em; color:#9c8659}
+  .cfg-options{display:flex; gap:4px}
+  .cfg-options button{cursor:pointer; min-width:38px; padding:5px 7px; border:1px solid rgba(216,179,99,.18);
+    background:rgba(0,0,0,.3); color:#9a8258; font-family:var(--en); font-size:10px; transition:.16s ease}
+  .cfg-options button:hover{border-color:rgba(216,179,99,.45); color:#e0c692}
+  .cfg-options button.active{border-color:var(--gold); color:#f2dcaa; background:rgba(107,77,37,.4)}
+  .cfg-toggle{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 10px;
+    border:1px solid rgba(105,179,145,.2); background:rgba(20,44,34,.2); color:#8db29a;
+    font-family:var(--display); cursor:pointer; transition:.18s ease; text-align:left}
+  .cfg-toggle b{font-size:11px; font-weight:400; letter-spacing:.1em}
+  .cfg-toggle span{font-size:8px; color:#587463}
+  .cfg-toggle.active{border-color:rgba(137,220,178,.5); color:#c9f0da; background:linear-gradient(180deg,rgba(61,126,96,.22),rgba(15,35,26,.2))}
+  .cfg-toggle:not(.active){border-color:rgba(140,63,54,.35); color:#b08a80; background:rgba(48,20,18,.25)}
+  .cfg-toggle:not(.active) span{color:#7d5a52}
+  .cfg-hint{margin:0; font-size:8px; line-height:1.6; color:#6f6048; letter-spacing:.03em}
   @media (max-width:820px){
     body{padding:20px 12px; align-items:start}
     .story{font-size:13px; line-height:1.95}
@@ -162,6 +188,33 @@
         </div>
       </div>
       <div class="actions">
+        <div class="mode-tabs" role="group" aria-label="模式选择">
+          <button class="mode-tab active" data-mode="campaign" type="button"><b>战 役</b><span>五章主线剧情</span></button>
+          <button class="mode-tab" data-mode="skirmish" type="button"><b>遭 遇 战</b><span>人机对打</span></button>
+        </div>
+        <div class="skirmish-config" id="skirmish-config" hidden>
+          <div class="cfg-row"><span>起始金钱</span>
+            <div class="cfg-options" id="gold-options">
+              <button type="button" data-gold="1000">1000</button>
+              <button type="button" data-gold="2000" class="active">2000</button>
+              <button type="button" data-gold="4000">4000</button>
+              <button type="button" data-gold="8000">8000</button>
+            </div>
+          </div>
+          <div class="cfg-row"><span>初始步兵</span>
+            <div class="cfg-options" id="inf-options">
+              <button type="button" data-inf="0">0</button>
+              <button type="button" data-inf="2">2</button>
+              <button type="button" data-inf="4" class="active">4</button>
+              <button type="button" data-inf="6">6</button>
+              <button type="button" data-inf="8">8</button>
+            </div>
+          </div>
+          <button class="cfg-toggle active" id="super-toggle" type="button">
+            <b>超级武器</b><span>天火 · 雷霆 · 瘟疫</span>
+          </button>
+          <p class="cfg-hint">金钱与初始步兵双方相同；关闭超级武器后，双方都无法建造 T3 超武建筑。</p>
+        </div>
         <div class="difficulty" role="group" aria-label="难度选择">
           <button class="diff-option" data-diff="squire"><b>侍从</b><span>轻松经营</span></button>
           <button class="diff-option active" data-diff="knight"><b>骑士</b><span>标准战役</span></button>
@@ -183,11 +236,38 @@
   (function(){
     var diff='knight';
     var ally=false;
+    var mode='campaign';
+    var gold=2000;
+    var inf=4;
+    var sup=true;
     var play=document.getElementById('play');
     var allyToggle=document.getElementById('ally-toggle');
     var options=document.querySelectorAll('.diff-option');
+    var modeTabs=document.querySelectorAll('.mode-tab');
+    var cfg=document.getElementById('skirmish-config');
+    var goldBtns=document.querySelectorAll('#gold-options button');
+    var infBtns=document.querySelectorAll('#inf-options button');
+    var superToggle=document.getElementById('super-toggle');
+    var playLabel=play.querySelector('b');
+    var playSub=play.querySelector('small');
+
     function updateLink(){
-      play.href='game.html?autostart=1&diff='+encodeURIComponent(diff)+(ally?'&ally=1':'');
+      if(mode==='skirmish'){
+        play.href='game.html?autostart=1&mode=skirmish&diff='+encodeURIComponent(diff)
+          +'&gold='+gold+'&inf='+inf+'&super='+(sup?1:0)+(ally?'&ally=1':'');
+        playLabel.textContent='进 入 遭 遇 战';
+        playSub.textContent='SKIRMISH';
+      }else{
+        play.href='game.html?autostart=1&diff='+encodeURIComponent(diff)+(ally?'&ally=1':'');
+        playLabel.textContent='打 开 游 戏';
+        playSub.textContent='ENTER THE REALM';
+      }
+    }
+    function applyMode(m){
+      mode=m;
+      modeTabs.forEach(function(b){b.classList.toggle('active',b.dataset.mode===m)});
+      cfg.hidden = m!=='skirmish';
+      updateLink();
     }
     options.forEach(function(btn){
       btn.addEventListener('click',function(){
@@ -201,7 +281,30 @@
       allyToggle.classList.toggle('active',ally);
       updateLink();
     });
-    updateLink();
+    modeTabs.forEach(function(tab){
+      tab.addEventListener('click',function(){ applyMode(tab.dataset.mode); });
+    });
+    goldBtns.forEach(function(btn){
+      btn.addEventListener('click',function(){
+        gold=parseInt(btn.dataset.gold,10);
+        goldBtns.forEach(function(b){b.classList.toggle('active',b===btn)});
+        updateLink();
+      });
+    });
+    infBtns.forEach(function(btn){
+      btn.addEventListener('click',function(){
+        inf=parseInt(btn.dataset.inf,10);
+        infBtns.forEach(function(b){b.classList.toggle('active',b===btn)});
+        updateLink();
+      });
+    });
+    superToggle.addEventListener('click',function(){
+      sup=!sup;
+      superToggle.classList.toggle('active',sup);
+      updateLink();
+    });
+    var qMode=new URLSearchParams(location.search).get('mode');
+    applyMode(qMode==='skirmish'?'skirmish':'campaign');
   })();
 </script>
 </body>

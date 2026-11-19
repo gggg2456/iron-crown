@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "铁与王冠：源码、web 资源与打包脚本",
-  "releaseName": "铁与王冠 v1.0.0 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.0.0 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 本次内容\n\n- 五章战役：边境劫掠 / 铁鸦重甲 / 群鸦奔袭 / 瘟疫投石 / 黑鸦之王\n- 三档难度，可选青杉盟军 AI 队友\n- 13 种可训练部队、17 种建筑、8 项科技、3 种超级武器\n- 菱形等距 Canvas 战场、战争迷雾、雷达塔、小地图与编队操作\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "铁与王冠 v1.1.0：主线剧情、遭遇战与奖励箱",
+  "releaseName": "铁与王冠 v1.1.0 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.1.0 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.1 新增\n\n- **主线剧情**：五章战前剧情卡与战后尾声，终章有结局，可跳过\n- **遭遇战**：人机对打，可选起始金钱（1000/2000/4000/8000）、初始步兵（0–8）、超级武器开关\n- **奖励箱**：地图随机刷新宝箱，金币 / 援军 / 补给 / 超武充能四种奖励\n- 遭遇战启用波次攻势，战役保持原有节奏\n\n### 既有内容\n\n- 五章战役：边境劫掠 / 铁鸦重甲 / 群鸦奔袭 / 瘟疫投石 / 黑鸦之王\n- 三档难度，可选青杉盟军 AI 队友\n- 13 种可训练部队、17 种建筑、8 项科技、3 种超级武器\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }

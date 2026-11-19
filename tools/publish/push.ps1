@@ -21,8 +21,8 @@ param(
   [string]$Staging  = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
   [string]$RepoName = 'iron-crown',
   [string]$Owner,
-  [string]$ZipPath  = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'dist\IronCrown-1.0.0-win64.zip'),
-  [string]$Tag      = 'v1.0.0',
+  [string]$ZipPath  = '',
+  [string]$Tag      = '',
   [string]$MetaPath = (Join-Path $PSScriptRoot 'meta.json'),
   [switch]$SkipRelease
 )
@@ -37,6 +37,13 @@ $token = (Get-Content -LiteralPath $sec -Raw | ConvertFrom-Json).access_token
 if (-not $token) { throw "Empty token in $sec" }
 
 $meta = [IO.File]::ReadAllText($MetaPath, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
+
+# Tag and asset name follow package.json, so a version bump is enough to cut a release.
+$pkgPath = Join-Path $Staging 'package.json'
+$version = if (Test-Path -LiteralPath $pkgPath) { (Get-Content -LiteralPath $pkgPath -Raw -Encoding UTF8 | ConvertFrom-Json).version } else { '1.0.0' }
+if (-not $ZipPath) { $ZipPath = Join-Path $Staging "dist\IronCrown-$version-win64.zip" }
+if (-not $Tag) { $Tag = "v$version" }
+Write-Host "==> version $version (tag $Tag)"
 
 $H  = @{ Authorization = "Bearer $token"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
 $UA = @{ 'User-Agent' = 'iron-crown-publisher' }

@@ -19,7 +19,14 @@ $docs = Join-Path $root 'docs'
 $utf8 = [Text.UTF8Encoding]::new($false)
 
 if (-not (Test-Path -LiteralPath (Join-Path $web 'story.html'))) { throw "web/story.html not found under $root" }
-if (Test-Path -LiteralPath $docs) { Remove-Item -LiteralPath $docs -Recurse -Force }
+if (Test-Path -LiteralPath $docs) {
+  # antivirus / indexers occasionally hold a handle for a moment: retry instead of failing
+  for ($i = 0; $i -lt 6; $i++) {
+    try { Remove-Item -LiteralPath $docs -Recurse -Force -ErrorAction Stop; break }
+    catch { Start-Sleep -Milliseconds 600 }
+  }
+  if (Test-Path -LiteralPath $docs) { throw "cannot clear $docs (file locked)" }
+}
 New-Item -ItemType Directory -Path $docs | Out-Null
 
 foreach ($f in @('game.js', 'style.css', 'iron-crown.ico')) {

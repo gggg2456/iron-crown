@@ -283,6 +283,51 @@ const LEVELS = [
     mods: { hp: 1.55, dmg: 1.45, speed: 1.1 }, reward: null, rewardName: '', map: 'throne'
   }
 ];
+/* ------------- main storyline ------------- */
+const STORY = [
+  {
+    intro: [
+      '黑鸦的掠夺队越过了界河。他们没有旗帜，只有火把——烧掉谷仓，赶走牲畜，把能带走的一切都带走。',
+      '你带着残兵赶回时，村口只剩焦黑的木桩。老猎户跪在灰里，指给你看北面的高地：掠夺者的营地就在那里，他们把抢来的东西堆成一座小山。'
+    ],
+    objective: '摧毁掠夺者营地的主堡，夺回被抢走的粮食与金矿。',
+    outro: '掠夺者的营地在夜里烧成了第二个太阳。你从灰烬里捡回半袋麦种，分给还愿意留下的人。'
+  },
+  {
+    intro: [
+      '边境的溃兵带回一个消息：黑鸦的铁卫出动了。他们披着三层重甲，走路像铁匠铺里的风箱，慢，但刀砍上去只留一道白痕。',
+      '赤蔷薇的旧军械库里还埋着一批长戟。挖出来，磨亮，也许还来得及。'
+    ],
+    objective: '击溃黑鸦铁卫，摧毁他们的前沿要塞。',
+    outro: '重甲倒下时，声音像一座小塔塌了。你的长戟兵把断戟插在路口，作为给下一个路过的黑鸦人的告示。'
+  },
+  {
+    intro: [
+      '黑鸦不再列阵了。他们把骑兵拆成小队，从沼泽、从林线、从你没想到的方向扑上来，咬一口就走。',
+      '斥候说他们跑得比消息还快。那就让消息跑得更快——修瞭望塔，铺开视野，把每一次奔袭都变成他们的葬礼。'
+    ],
+    objective: '在沼泽地带挡住黑鸦的连续奔袭，反攻并摧毁他们的主堡。',
+    outro: '沼泽吞掉了太多马蹄。最后一批奔袭者没有再回来，他们的马在泥里站了一夜，第二天被你的农民牵了回来。'
+  },
+  {
+    intro: [
+      '黑鸦的投石车开始往城里扔东西。不是石头——是裹着腐肉的陶罐。砸开的地方，三天之内没有人敢靠近。',
+      '大教堂的祭司说，火与石灰能压住疫气。你需要先把那些投石车拆掉，再把干净的井水引回城里。'
+    ],
+    objective: '摧毁黑鸦的攻城队与主堡，保住营地不被瘟疫拖垮。',
+    outro: '石灰撒过的地方，第二年春天长出了很密的草。祭司说那是死者的谢意，也说那是活人的。'
+  },
+  {
+    intro: [
+      '王座厅的门是开着的。黑鸦之王坐在那里，盔甲上还沾着边境的火灰——他从一开始就没有打算退。',
+      '你身后是五场战役剩下的所有人。他们没有喊口号，只是把盾牌往前挪了半步。'
+    ],
+    objective: '攻入王座厅，击溃黑鸦之王，夺回铁与王冠。',
+    outro: '铁冠从台阶上滚下来，停在你脚边。你没有立刻捡起来——你先把它擦干净了。'
+  }
+];
+const FINALE = '赤蔷薇的旗帜重新挂上城墙那天，下了很久的雨。人们说，铁会生锈，王冠会蒙尘，但只要还有人愿意为一袋麦种打仗，这个国家就还没有结束。';
+
 const HOTKEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 const ENEMY_SITES = [
   { x: 34, y: 8 },   // 东北旧营地
@@ -412,6 +457,8 @@ const S = {
   training: null, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
+  run: 'campaign', supersEnabled: true, skirmish: null,
+  crates: [], crateTimer: 25,
   unlocked: new Set(BASE_UNLOCKED),
   wave: { n: 0, timer: 55 },
   enemy: { nextTrain: 10 },
@@ -519,10 +566,23 @@ function armyCount() {
 function heroAlive() {
   return S.units.some(u => u.team === PLAYER && u.type === 'hero' && u.hp > 0);
 }
-function currentLevel() { return LEVELS[S.campaignLevel] || LEVELS[0]; }
+// 遭遇战使用一张中性“关卡”，不带战役加成，也不出现在战役进度里。
+const SKIRMISH_LEVEL = {
+  name: '遭遇战', trait: '人机对战', desc: '自定义起始资源的自由对局。',
+  firstAdd: 0, everyAdd: 0, extra: 0, trainMul: 1,
+  mods: { hp: 1, dmg: 1, speed: 1 }, reward: null, rewardName: '', map: 'border'
+};
+function currentLevel() {
+  if (S.run === 'skirmish') return SKIRMISH_LEVEL;
+  return LEVELS[S.campaignLevel] || LEVELS[0];
+}
 function isUnlocked(key) { return S.unlocked.has(key); }
 function refreshUnlocked() {
   S.unlocked = new Set(BASE_UNLOCKED);
+  if (S.run === 'skirmish') {
+    for (const L of LEVELS) if (L.reward) S.unlocked.add(L.reward);
+    return;
+  }
   for (let i = 0; i < S.campaignLevel; i++) {
     const r = LEVELS[i] && LEVELS[i].reward;
     if (r) S.unlocked.add(r);
@@ -574,6 +634,20 @@ function scalePlayerHp(mul, filter) {
   }
 }
 function updateCampaignUI() {
+  if (S.run === 'skirmish') {
+    const theme = (MAP_THEMES[S.mapTheme] || MAP_THEMES.border).name;
+    const kickerS = $$('.mission-kicker')[0];
+    const objS = $$('.mission-objective')[0];
+    if (kickerS) kickerS.textContent = `遭遇战 · ${theme}`;
+    if (objS) objS.innerHTML = `<i></i>摧毁黑鸦主堡 · 人机对战`;
+    const scS = $('#start-campaign');
+    if (scS) scS.textContent = `遭遇战 · ${theme}　起始金币 ${(S.skirmish && S.skirmish.gold) || 2000}　初始步兵 ${(S.skirmish && S.skirmish.inf) || 0}`;
+    const loreS = $('.start-lore');
+    if (loreS) loreS.innerHTML = `遭遇战 · ${theme}<br>摧毁黑鸦主堡即可获胜 · 地图上会刷新奖励箱`;
+    const mainS = $('#btn-start .start-btn-main');
+    if (mainS) mainS.textContent = '开 始 遭 遇 战';
+    return;
+  }
   const L = currentLevel(), n = S.campaignLevel + 1;
   const kicker = $$('.mission-kicker')[0];
   const obj = $$('.mission-objective')[0];
@@ -831,6 +905,53 @@ function addTree(x, y, variant) {
   S.trees.push({ x, y, variant, size: rnd(.75, 1.2), phase: rnd(0, 9) });
 }
 
+/* ------------- skirmish setup ------------- */
+function findKeepSpot(cx, cy) {
+  for (let r = 0; r <= 10; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const tx = clamp(Math.round(cx + dx - 1.5), 0, MAP - 3);
+        const ty = clamp(Math.round(cy + dy - 1.5), 0, MAP - 3);
+        if (canPlace('keep', tx, ty, { ignoreBuildRadius: true })) return { tx, ty };
+      }
+    }
+  }
+  return null;
+}
+function clearKeepArea(tx, ty) {
+  const w = B.keep.w, d = B.keep.d;
+  S.trees = S.trees.filter(t => !(t.x > tx - .8 && t.x < tx + w + .8 && t.y > ty - .8 && t.y < ty + d + .8));
+  S.props = S.props.filter(p => !(p.x > tx - .8 && p.x < tx + w + .8 && p.y > ty - .8 && p.y < ty + d + .8));
+}
+function spawnSkirmishStart() {
+  const cfg = S.skirmish || { gold: 2000, inf: 4, supers: true };
+  const pSpot = findKeepSpot(8.5, 32.5);
+  const eSpot = findKeepSpot(S.enemySite.x + 1.5, S.enemySite.y + 1.5);
+  if (pSpot) { clearKeepArea(pSpot.tx, pSpot.ty); addBuilding('keep', pSpot.tx, pSpot.ty, PLAYER); }
+  else addUnit('baseVehicle', PLAYER, 9.65, 36.35);
+  if (eSpot) { clearKeepArea(eSpot.tx, eSpot.ty); addBuilding('keep', eSpot.tx, eSpot.ty, ENEMY); }
+  else addUnit('baseVehicle', ENEMY, S.enemySite.x + 2.55, S.enemySite.y + 5.8);
+
+  const roster = ['spearman', 'swordsman', 'archer', 'crossbowman'];
+  const n = clamp(cfg.inf | 0, 0, 12);
+  for (const team of [PLAYER, ENEMY]) {
+    const keep = S.buildings.find(b => b.team === team && b.type === 'keep');
+    const cx = keep ? keep.x : (team === PLAYER ? 9.65 : S.enemySite.x + 1.5);
+    const cy = keep ? keep.y + 1.6 : (team === PLAYER ? 36.35 : S.enemySite.y + 4);
+    for (let i = 0; i < n; i++) {
+      const a = (i / Math.max(1, n)) * Math.PI * 2 + (team === ENEMY ? .45 : 0);
+      const rr = 2.3 + (i % 2) * .8;
+      const type = roster[i % roster.length];
+      const u = addUnit(type, team, cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+      u.order = { type: 'move', x: cx + Math.cos(a) * (rr + 1.5), y: cy + Math.sin(a) * (rr + 1.5) };
+    }
+  }
+  if (!S.buildings.some(b => b.type === 'keep')) {
+    setTimeout(() => toast('开局落位失败，已退化为基地车开局：请先展开基地。', 'warn', 'workshop'), 1200);
+  }
+}
+
 function resetWorld() {
   seed = seeded(0x51C0FFEE + S.diffKey.length * 7717 + S.campaignLevel * 104729);
   refreshUnlocked();
@@ -839,11 +960,19 @@ function resetWorld() {
   S.selected = []; S.selectedBuilding = null; S.inspect = null;
   S.groups = {};
   Voice.stopAll();
-  S.placing = null; S.drag = null; S.time = 0; S.gold = 1200; S.training = null;
+  S.placing = null; S.drag = null; S.time = 0;
+  S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : 1200;
+  S.training = null;
   S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.enemySuper = null; S.radar = false;
   S.stats = { kills: 0, losses: 0, gathered: 0 };
   const L = currentLevel();
-  S.mapTheme = L.map || 'border';
+  S.supersEnabled = !(S.run === 'skirmish' && S.skirmish) || !!S.skirmish.supers;
+  if (S.run === 'skirmish') {
+    const themes = Object.keys(MAP_THEMES);
+    S.mapTheme = themes[Math.floor(Math.random() * themes.length)];
+  } else {
+    S.mapTheme = L.map || 'border';
+  }
   // 每局从几个远处营地中抽取一个，避免黑鸦主堡永远出现在同一个角落。
   S.enemySite = ENEMY_SITES[Math.floor(Math.random() * ENEMY_SITES.length)];
   S.enemy2Site = null;
@@ -855,7 +984,7 @@ function resetWorld() {
     ? allyChoices[Math.floor(Math.random() * allyChoices.length)]
     : ALLY_SITES[0];
   // After the third map, a second Black Raven commander enters the field.
-  if (S.campaignLevel >= 3) {
+  if (S.run === 'campaign' && S.campaignLevel >= 3) {
     const choices = ENEMY_SITES.filter(s =>
       Math.hypot(s.x - 7, s.y - 31) > 22
       && Math.hypot(s.x - S.enemySite.x, s.y - S.enemySite.y) > 14
@@ -867,14 +996,15 @@ function resetWorld() {
   S.enemyMods = { ...L.mods };
   S.wave = { n: 0, timer: Math.max(30, DIFFS[S.diffKey].first + L.firstAdd) };
   S.enemy = { nextTrain: 12, tacticTimer: 0, baseVehicleTimer: 18, attackTimer: 40, buildRetry: 0 };
-  S.enemySuper = {
+  S.enemySuper = S.supersEnabled ? {
     key: ['fire', 'storm', 'plague'][Math.floor(Math.random() * 3)],
     timer: 90, built: false
-  };
+  } : null;
   S.allyAI = S.allyEnabled ? { timer: 5, orderTimer: 3 } : null;
   S.lastUnderAttack = -99;
   S.tour = null; S.keys = {}; S.hover = null;
   S.uid = 1;
+  S.crates = []; S.crateTimer = 22 + rnd(0, 8);
 
   // Both sides start bare: one mobile base vehicle, no pre-built structures or army.
   const eb = S.enemySite;
@@ -937,12 +1067,16 @@ function resetWorld() {
     }
   }
 
-  // Starting force: exactly one base vehicle per side. Deploy it, train peasants, then build up.
-  addUnit('baseVehicle', PLAYER, 9.65, 36.35);
-  addUnit('baseVehicle', ENEMY, eb.x + 2.55, eb.y + 5.8);
-  if (S.secondAI && S.enemy2Site) {
-    const u = addUnit('baseVehicle', ENEMY, S.enemy2Site.x + 2.55, S.enemy2Site.y + 5.8);
-    u.ai2 = true;
+  // 战役：双方各只有一辆基地车；遭遇战：双方各有一座已完工主堡 + 设定数量的初始步兵。
+  if (S.run === 'skirmish') {
+    spawnSkirmishStart();
+  } else {
+    addUnit('baseVehicle', PLAYER, 9.65, 36.35);
+    addUnit('baseVehicle', ENEMY, eb.x + 2.55, eb.y + 5.8);
+    if (S.secondAI && S.enemy2Site) {
+      const u = addUnit('baseVehicle', ENEMY, S.enemy2Site.x + 2.55, S.enemy2Site.y + 5.8);
+      u.ai2 = true;
+    }
   }
 
   paintMap();
@@ -2051,6 +2185,7 @@ function enemyAssault() {
   Sound.play('hornlow');
 }
 function updateEnemySuper(dt) {
+  if (!S.supersEnabled) return;
   if (!S.enemySuper) return;
   const sup = SUPERS[S.enemySuper.key];
   if (!sup) return;
@@ -2092,6 +2227,7 @@ function tryBuildEnemyBarracks() {
   return false;
 }
 function tryBuildEnemySuperBuilding() {
+  if (!S.supersEnabled) return false;
   if (!S.enemySuper || S.enemySuper.built) return false;
   const sup = SUPERS[S.enemySuper.key];
   if (!sup) return false;
@@ -2286,6 +2422,11 @@ function updateAllyAI(dt) {
 /* ------------- game update ------------- */
 function update(dt) {
   S.time += dt;
+  if (S.run === 'skirmish') {
+    S.wave.timer -= dt;
+    if (S.wave.timer <= 0) launchWave();
+  }
+  updateCrates(dt);
   S.radar = playerHasBuilding('watchtower');
   S.superCd = Math.max(0, S.superCd - dt);
   for (const f of S.superFx) f.t += dt;
@@ -2707,6 +2848,107 @@ function drawGold(g, now) {
     ctx.beginPath(); ctx.arc(-8, -17, 1.6, 0, 7); ctx.fill();
   }
   ctx.restore();
+}
+function drawCrate(c, now) {
+  const p = mapPos(c.x, c.y);
+  const bob = Math.sin(now * 2.1 + c.phase) * 2.2;
+  ctx.save();
+  ctx.translate(p.x, p.y + bob * .3);
+  shadow(ctx, 17, 7, .26);
+  const fade = c.life < 10 ? Math.max(.22, c.life / 10) : 1;
+  ctx.globalAlpha = fade;
+  const glow = ctx.createRadialGradient(0, -18, 2, 0, -18, 30);
+  glow.addColorStop(0, 'rgba(240,205,120,.3)');
+  glow.addColorStop(1, 'rgba(240,205,120,0)');
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, -18, 30, 0, 7); ctx.fill();
+  const top = { x: 0, y: -32 }, right = { x: 14, y: -24 }, bot = { x: 0, y: -16 }, left = { x: -14, y: -24 };
+  drawPoly(ctx, [top, right, bot, left], '#7a5730', 'rgba(26,18,10,.65)', 1);
+  drawPoly(ctx, [left, bot, { x: 0, y: -2 }, { x: -14, y: -10 }], '#4a3218', 'rgba(26,18,10,.65)', 1);
+  drawPoly(ctx, [right, bot, { x: 0, y: -2 }, { x: 14, y: -10 }], '#5c3d1f', 'rgba(26,18,10,.65)', 1);
+  ctx.strokeStyle = '#e6c67e'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(left.x, left.y); ctx.lineTo(bot.x, bot.y); ctx.lineTo(right.x, right.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(0, -2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-5, -27); ctx.lineTo(5, -27); ctx.stroke();
+  const tw = Math.sin(now * 3 + c.phase);
+  if (tw > .35) {
+    ctx.fillStyle = 'rgba(255,242,196,.9)';
+    ctx.beginPath(); ctx.arc(7, -35, 1.9, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+const CRATE_KINDS = ['gold', 'troops', 'supply', 'super'];
+function spawnCrate() {
+  for (let i = 0; i < 80; i++) {
+    const x = rnd(6, MAP - 6), y = rnd(6, MAP - 6);
+    if (terrainAt(x, y)) continue;
+    if (S.buildings.some(b => Math.hypot(x - b.x, y - b.y) < 5)) continue;
+    if (S.goldNodes.some(g => Math.hypot(x - g.x, y - g.y) < 2.5)) continue;
+    if (S.crates.some(c => Math.hypot(x - c.x, y - c.y) < 6)) continue;
+    const kind = CRATE_KINDS[Math.floor(Math.random() * CRATE_KINDS.length)];
+    S.crates.push({ x, y, kind, phase: rnd(0, 9), life: 75 });
+    burst(x, y, 'gold', 6);
+    return true;
+  }
+  return false;
+}
+function grantCrate(c) {
+  if (c.kind === 'gold') {
+    const amount = 200 + Math.floor(Math.random() * 200);
+    S.gold += amount;
+    floatText(c.x, c.y, `+${amount} 金币`, '#f0d18a');
+    toast(`奖励箱：获得 ${amount} 金币`, '', 'coin');
+  } else if (c.kind === 'troops') {
+    const pool = [...S.unlocked].filter(k => U[k] && U[k].producer && k !== 'hero' && k !== 'baseVehicle' && U[k].cost > 0);
+    const n = 2 + (Math.random() < .5 ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      const type = pool.length ? pool[Math.floor(Math.random() * pool.length)] : 'spearman';
+      const a = i / n * Math.PI * 2;
+      const u = addUnit(type, PLAYER, c.x + Math.cos(a) * 1.4, c.y + Math.sin(a) * 1.4);
+      u.order = { type: 'move', x: c.x + Math.cos(a) * 3, y: c.y + Math.sin(a) * 3 };
+      burst(u.x, u.y, 'dust', 5);
+    }
+    floatText(c.x, c.y, `援军 ×${n}`, '#9ac4ff');
+    toast(`奖励箱：${n} 名援军加入队伍`, '', 'sword');
+  } else if (c.kind === 'supply') {
+    for (const u of S.units) {
+      if (u.team !== PLAYER || u.garrisoned || u.hp <= 0) continue;
+      u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .25);
+    }
+    floatText(c.x, c.y, '全军补给 +25%', '#9fd39a');
+    toast('奖励箱：全军回复 25% 生命', '', 'shield');
+  } else {
+    if (S.supersEnabled && S.superKey) {
+      S.superCd = 0;
+      floatText(c.x, c.y, '超级武器就绪', '#a9d6ff');
+      toast('奖励箱：超级武器冷却清零', '', 'scroll');
+    } else {
+      S.gold += 300;
+      floatText(c.x, c.y, '+300 金币', '#f0d18a');
+      toast('奖励箱：获得 300 金币', '', 'coin');
+    }
+  }
+  Sound.play('ui');
+  burst(c.x, c.y, 'gold', 16);
+  updateHud(true);
+}
+function updateCrates(dt) {
+  S.crateTimer -= dt;
+  if (S.crateTimer <= 0) {
+    S.crateTimer = 45 + rnd(0, 25);
+    if (S.crates.length < 3) spawnCrate();
+  }
+  for (const c of [...S.crates]) {
+    c.life -= dt;
+    if (c.life <= 0) { S.crates = S.crates.filter(x => x !== c); continue; }
+    for (const u of S.units) {
+      if (u.team !== PLAYER || u.garrisoned || u.hp <= 0) continue;
+      if (Math.hypot(u.x - c.x, u.y - c.y) > 1.0) continue;
+      grantCrate(c);
+      S.crates = S.crates.filter(x => x !== c);
+      break;
+    }
+  }
 }
 function drawTree(t, now) {
   const p = mapPos(t.x, t.y);
@@ -3323,6 +3565,7 @@ function render(now) {
   for (const tr of S.trees) list.push({ sort: tr.y, draw: () => drawTree(tr, t), x: tr.x, y: tr.y });
   for (const pr of S.props) list.push({ sort: pr.y, draw: () => drawProp(pr, t), x: pr.x, y: pr.y });
   for (const g of S.goldNodes) list.push({ sort: g.y, draw: () => drawGold(g, t), x: g.x, y: g.y });
+  for (const c of S.crates) list.push({ sort: c.y, draw: () => drawCrate(c, t), x: c.x, y: c.y });
   for (const b of S.buildings) {
     if (b.team === ENEMY && !isVisibleToPlayer(b.x, b.y)) continue;
     list.push({ sort: b.ty + b.d, draw: () => drawBuilding(b, t), x: b.x, y: b.y });
@@ -3382,9 +3625,16 @@ function cardDef(key) {
   if (TECH[key]) return { type: 'tech', def: TECH[key], key };
   return { type: 'unit', def: U[key], key };
 }
+const SUPER_BUILDINGS = new Set(['sunAltar', 'stormSpire', 'plagueWell']);
+function isSuperKey(key) {
+  return (TECH[key] && TECH[key].isSuper) || SUPER_BUILDINGS.has(key);
+}
 function renderCards() {
   const all = TABS[S.tab];
-  const keys = all.filter(k => TECH[k] ? true : isUnlocked(k));
+  const keys = all.filter(k => {
+    if (!S.supersEnabled && isSuperKey(k)) return false;
+    return TECH[k] ? true : isUnlocked(k);
+  });
   if (!keys.length) {
     const next = currentLevel().rewardName;
     els.grid.innerHTML = `<div class="cmd-locked"><b>工事尚未解锁</b><span>${next ? `通关本章解锁：${next}` : '继续推进战役'}</span></div>`;
@@ -3527,7 +3777,7 @@ function updateSuperUI() {
   const btn = els.superBtn;
   if (!btn) return;
   const sup = selectedSuper();
-  btn.hidden = !sup;
+  btn.hidden = !sup || !S.supersEnabled;
   btn.classList.toggle('cooling', S.superCd > 0);
   btn.classList.toggle('aiming', !!S.superAim);
   if (!sup) return;
@@ -3602,6 +3852,7 @@ function updateHud(force = false) {
     els.wave.textContent = fmtTime(S.wave.timer);
     els.waveChip.classList.toggle('urgent', S.wave.timer < 12);
   }
+  if (window.__dbgUpdate) window.__dbgUpdate();
 }
 function selectionSignature() {
   const hero = S.selected.length === 1 && S.selected[0].type === 'hero' ? ':' + Math.ceil(S.selected[0].cleaveCd || 0) : '';
@@ -3711,11 +3962,18 @@ function showEndScreen(win) {
   end.querySelector('.end-modal').classList.toggle('defeat', !win);
   const L = currentLevel();
   const next = LEVELS[S.campaignLevel + 1];
-  const hasNext = win && !!next;
-  $('#end-kicker').textContent = win ? (hasNext ? `第${CN_NUM[S.campaignLevel + 1]}章告捷` : '战役完成') : '王国的黄昏';
+  const hasNext = win && S.run === 'campaign' && !!next;
+  $('#end-kicker').textContent = S.run === 'skirmish'
+    ? (win ? '遭遇战 · 大捷' : '遭遇战 · 失利')
+    : (win ? (hasNext ? `第${CN_NUM[S.campaignLevel + 1]}章告捷` : '战役完成') : '王国的黄昏');
   $('#end-title').textContent = win ? '胜利' : '沦陷';
   if (win) {
     $('#end-lore').innerHTML = `${L.rewardName ? `新军备已解锁：<b style="color:#f0d09a">${L.rewardName}</b><br>` : ''}${hasNext ? `下一章：${next.name} · 敌军特质：${next.trait}` : '黑鸦之王已经倒下，铁与王冠重归赤蔷薇。'}`;
+    if (S.run === 'campaign') {
+      const st = STORY[S.campaignLevel];
+      if (st && st.outro) $('#end-lore').innerHTML += `<br><br><span class="end-outro">${st.outro}</span>`;
+      if (!hasNext) $('#end-lore').innerHTML += `<br><br><b class="end-finale">${FINALE}</b>`;
+    }
   } else {
     $('#end-lore').textContent = `败于「${L.name}」。赤蔷薇需要一位新的统帅。`;
   }
@@ -3727,6 +3985,7 @@ function hideEndScreen() { $('#end-screen').hidden = true; }
 function advanceFromEnd() {
   const win = S.lastWin;
   hideEndScreen();
+  if (S.run === 'skirmish') { restartGame(); return; }
   if (win && S.campaignLevel < LEVELS.length - 1) {
     S.campaignLevel++;
     startGame();
@@ -3742,6 +4001,11 @@ function renderMinimap() {
     if (!isVisibleToPlayer(g.x, g.y)) continue;
     const p = miniPoint(g.x, g.y);
     mctx.fillStyle = '#e0bb62'; mctx.beginPath(); mctx.arc(p.x, p.y, 3, 0, 7); mctx.fill();
+  }
+  for (const c of S.crates) {
+    if (!isVisibleToPlayer(c.x, c.y)) continue;
+    const p = miniPoint(c.x, c.y);
+    mctx.fillStyle = '#f6dd9b'; mctx.beginPath(); mctx.arc(p.x, p.y, 2.4, 0, 7); mctx.fill();
   }
   for (const b of S.buildings) {
     if (b.team === ENEMY && !isVisibleToPlayer(b.x, b.y)) continue;
@@ -4118,6 +4382,8 @@ function bindUI() {
   $('#btn-restart-pause').addEventListener('click', () => { hidePause(); restartGame(); });
   $('#btn-restart').addEventListener('click', advanceFromEnd);
   $('#btn-menu').addEventListener('click', () => { hideEndScreen(); goMenu(); });
+  $('#btn-story-start')?.addEventListener('click', hideStoryBriefing);
+  $('#btn-story-skip')?.addEventListener('click', hideStoryBriefing);
   mini.addEventListener('pointerdown', minimapClick);
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('pointerdown', onPointerDown);
@@ -4345,6 +4611,46 @@ function onKeyDown(e) {
 }
 
 /* ------------- flow ------------- */
+function playIntroToasts() {
+  const L = currentLevel();
+  if (S.run === 'skirmish') {
+    setTimeout(() => toast(`遭遇战 · ${(MAP_THEMES[S.mapTheme] || MAP_THEMES.border).name}｜起始金币 ${S.gold}｜初始步兵 ${(S.skirmish && S.skirmish.inf) || 0}｜超级武器${S.supersEnabled ? '启用' : '禁用'}`, 'warn', 'shield'), 700);
+    setTimeout(() => toast('摧毁黑鸦主堡即可取胜；地图上会刷新奖励箱，派兵去捡。', '', 'scroll'), 1700);
+    if (S.allyEnabled) setTimeout(() => toast('青杉盟军已在远处建立营地：他们会自行出兵、进攻黑鸦，并共享视野。', '', 'shield'), 3200);
+    return;
+  }
+  setTimeout(() => toast(`第${CN_NUM[S.campaignLevel + 1]}章 · ${L.name}｜地图：${(MAP_THEMES[S.mapTheme] || MAP_THEMES.border).name}｜敌军特质：${L.trait}`, 'warn', 'shield'), 600);
+  setTimeout(() => toast('地形：水域不可通行，沼泽减速，道路加速；建造需靠近己方建筑。', '', 'scroll'), 1700);
+  setTimeout(() => toast('开局没有主堡和农民，金币 1200：先选基地车展开主堡，再从主堡训练农民。', '', 'coin'), 2800);
+  setTimeout(() => toast('步兵可进驻农舍/大教堂；驻军弓手会从窗口射击。', '', 'shield'), 3800);
+  setTimeout(() => toast('战争迷雾已笼罩战场：只有我军视野内可见，派兵侦察。', '', 'scroll'), 4700);
+  setTimeout(() => toast('基地车已就绪：选中后点击「部署为基地」，可在远处展开新主堡；工坊也能继续制造。', '', 'workshop'), 5600);
+  if (S.allyEnabled) setTimeout(() => toast('青杉盟军已在远处建立营地：他们会自行出兵、进攻黑鸦，并共享视野。', '', 'shield'), 6400);
+}
+function showStoryBriefing() {
+  const st = STORY[S.campaignLevel];
+  if (!st) { S.mode = 'playing'; return; }
+  S.mode = 'briefing';
+  const n = S.campaignLevel + 1;
+  const scr = $('#story-screen');
+  if (!scr) { S.mode = 'playing'; playIntroToasts(); return; }
+  $('#story-kicker').textContent = `第 ${CN_NUM[n] || n} 章 · 赤蔷薇纪年`;
+  $('#story-title').textContent = currentLevel().name;
+  $('#story-body').innerHTML = st.intro.map(p => `<p>${p}</p>`).join('');
+  $('#story-objective').textContent = '作战目标 · ' + st.objective;
+  scr.hidden = false;
+  requestAnimationFrame(() => scr.classList.add('show'));
+  Sound.play('horn');
+}
+function hideStoryBriefing() {
+  const scr = $('#story-screen');
+  if (scr) {
+    scr.classList.remove('show');
+    setTimeout(() => { scr.hidden = true; }, 320);
+  }
+  S.mode = 'playing';
+  playIntroToasts();
+}
 function startGame() {
   Sound.init(); Sound.play('horn');
   clearToasts();
@@ -4363,14 +4669,9 @@ function startGame() {
   const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0);
   const focus = keep || S.units.find(u => u.team === PLAYER && u.type === 'baseVehicle' && u.hp > 0);
   if (focus) centerCamera(focus.x, focus.y, 1.04, true);
-  const L = currentLevel();
-  setTimeout(() => toast(`第${CN_NUM[S.campaignLevel + 1]}章 · ${L.name}｜地图：${(MAP_THEMES[S.mapTheme] || MAP_THEMES.border).name}｜敌军特质：${L.trait}`, 'warn', 'shield'), 900);
-  setTimeout(() => toast('地形：水域不可通行，沼泽减速，道路加速；建造需靠近己方建筑。', '', 'scroll'), 1600);
-  setTimeout(() => toast('开局没有主堡和农民，金币 1200：先选基地车展开主堡，再从主堡训练农民。', '', 'coin'), 2600);
-  setTimeout(() => toast('步兵可进驻农舍/大教堂；驻军弓手会从窗口射击。', '', 'shield'), 3400);
-  setTimeout(() => toast('战争迷雾已笼罩战场：只有我军视野内可见，派兵侦察。', '', 'scroll'), 4200);
-  setTimeout(() => toast('基地车已就绪：选中后点击「部署为基地」，可在远处展开新主堡；工坊也能继续制造。', '', 'workshop'), 5000);
-  if (S.allyEnabled) setTimeout(() => toast('青杉盟军已在远处建立营地：他们会自行出兵、进攻黑鸦，并共享视野。', '', 'shield'), 5800);
+  if (S.run === 'campaign') showStoryBriefing();
+  else playIntroToasts();
+  if (window.__dbgUpdate) window.__dbgUpdate();
 }
 function restartGame() {
   hidePause(); hideEndScreen();
@@ -4469,6 +4770,40 @@ window.IronCrown = {
 
 const params = new URLSearchParams(location.search);
 Voice.preload();
+if (params.get('mode') === 'skirmish') {
+  S.run = 'skirmish';
+  const g = parseInt(params.get('gold'), 10);
+  const inf = parseInt(params.get('inf'), 10);
+  S.skirmish = {
+    gold: Number.isFinite(g) ? clamp(g, 200, 20000) : 2000,
+    inf: Number.isFinite(inf) ? clamp(inf, 0, 12) : 4,
+    supers: params.get('super') !== '0'
+  };
+}
+if (params.get('debug') === '1') {
+  window.__ic = S;
+  const dbg = document.createElement('pre');
+  dbg.id = 'debug-state';
+  dbg.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden';
+  document.body.appendChild(dbg);
+  window.__dbg = dbg;
+  window.__dbgUpdate = () => {
+    dbg.textContent = JSON.stringify({
+      run: S.run, mode: S.mode, gold: S.gold, supers: S.supersEnabled,
+      units: S.units.length,
+      playerUnits: S.units.filter(u => u.team === PLAYER).length,
+      enemyUnits: S.units.filter(u => u.team === ENEMY).length,
+      buildings: S.buildings.length,
+      keeps: S.buildings.filter(b => b.type === 'keep').length,
+      crates: S.crates.length,
+      theme: S.mapTheme,
+      wave: Math.round(S.wave.timer),
+      enemySuperBuilding: S.buildings.some(b => b.team === ENEMY && SUPER_BUILDINGS.has(b.type)),
+      unlocked: S.unlocked.size
+    });
+  };
+  window.__dbgUpdate();
+}
 if (params.has('diff') && DIFFS[params.get('diff')]) {
   S.diffKey = params.get('diff');
   $$('.diff-option').forEach(b => b.classList.toggle('active', b.dataset.diff === S.diffKey));
@@ -4479,6 +4814,13 @@ if (params.get('ally') === '1') {
 }
 if (params.has('autostart')) {
   startGame();
+}
+// 调试用：?warp=秒数 直接把模拟推进若干秒，便于无头测试检查奖励箱、波次等随时间发生的行为。
+const warpSec = parseFloat(params.get('warp') || '0');
+if (Number.isFinite(warpSec) && warpSec > 0 && S.mode === 'playing') {
+  const steps = Math.min(4000, Math.round(warpSec * 20));
+  for (let i = 0; i < steps; i++) update(1 / 20);
+  if (window.__dbgUpdate) window.__dbgUpdate();
 }
 if (params.has('t')) {
   setTimeout(() => { S.time = 0; }, 50);
