@@ -16,6 +16,7 @@ const MAP_PX_W = MAP * 2 * HW, MAP_PX_H = MAP * 2 * HH;
 const ORIGIN = MAP * HW;
 const PLAYER = 'player', ENEMY = 'enemy', ALLY = 'ally';
 
+const CAMPAIGN_GOLD = 1200;
 const DIFFS = {
   squire: { first: 70, every: 65, base: 2, grow: 1.0, train: 19, max: 14 },
   knight: { first: 55, every: 50, base: 3, grow: 1.3, train: 16, max: 18 },
@@ -454,7 +455,7 @@ const S = {
   placing: null, drag: null, panning: null,
   mouse: { x: 0, y: 0, wx: 0, wy: 0, inside: false },
   keys: {},
-  training: null, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -588,20 +589,19 @@ function refreshUnlocked() {
     if (r) S.unlocked.add(r);
   }
 }
-function trainingSpeed() {
-  if (!S.training) return 1;
+function trainingSpeedFor(cat) {
   let sp = 1;
-  if (U[S.training.type].producer === 'barracks') {
+  if (cat === 'barracks') {
     const n = S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && b.type === 'barracks').length;
     sp += Math.max(0, n - 1) * .5;
   }
-  if (U[S.training.type].producer === 'workshop') {
+  if (cat === 'workshop') {
     const n = S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && b.type === 'workshop').length;
     sp += Math.max(0, n - 1) * .35;
   }
   const armories = S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && b.type === 'armory').length;
   const forges = S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && b.type === 'forge').length;
-  const siegeBonus = S.tech.strategy_siege && U[S.training.type].producer === 'workshop' ? 1.2 : 1;
+  const siegeBonus = S.tech.strategy_siege && cat === 'workshop' ? 1.2 : 1;
   return sp * (1 + armories * .15 + forges * .08) * (1 + (S.tech.drill ? .15 : 0)) * siegeBonus;
 }
 function techDmgMul(u) {
@@ -656,7 +656,7 @@ function updateCampaignUI() {
   const sc = $('#start-campaign');
   if (sc) sc.textContent = `第 ${n} 章 · ${L.name}　敌军特质：${L.trait}　${L.reward ? `通关解锁：${L.rewardName}` : '最终决战'}`;
   const lore = $('.start-lore');
-  if (lore) lore.innerHTML = `第 ${n} 章 · ${L.name}<br>敌军特质：${L.trait}${L.reward ? `　·　通关解锁：${L.rewardName}` : '　·　最终决战'}`;
+  if (lore) lore.innerHTML = `第 ${n} 章 · ${L.name}<br>敌军特质：${L.trait}${L.reward ? `　·　通关解锁：${L.rewardName}` : '　·　最终决战'}<br>固定资金 ${CAMPAIGN_GOLD}（主线不可调整）`;
   const main = $('#btn-start .start-btn-main');
   if (main) main.textContent = `开 始 第 ${n} 章`;
 }
@@ -961,8 +961,8 @@ function resetWorld() {
   S.groups = {};
   Voice.stopAll();
   S.placing = null; S.drag = null; S.time = 0;
-  S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : 1200;
-  S.training = null;
+  S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
+  S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
   S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.enemySuper = null; S.radar = false;
   S.stats = { kills: 0, losses: 0, gathered: 0 };
   const L = currentLevel();
@@ -1950,47 +1950,87 @@ function spawnPointFor(b) {
   const p = { x: b.x + rnd(-.7, .7), y: b.ty + b.d + .95 };
   return p;
 }
-function tryTrain(type) {
-  if (S.mode !== 'playing' || S.paused || S.ended) return;
-  if (U[type].hero) {
-    if (heroAlive()) { toast('狮心英雄已在场，无法重复受封', 'warn', 'hero'); Sound.play('ui'); return; }
-    if (S.training && S.training.type === 'hero') { toast('英雄正在受封，请稍候', 'warn', 'hero'); Sound.play('ui'); return; }
+function prodReservedPop(cat) {
+  const line = S.prod[cat];
+  if (!line) return 0;
+  let pop = 0;
+  if (line.cur) pop += U[line.cur.type].pop;
+  for (const it of line.queue) pop += U[it.type].pop;
+  return pop;
+}
+function heroInProduction() {
+  for (const cat of ['keep', 'barracks', 'workshop']) {
+    const line = S.prod[cat];
+    if (!line) continue;
+    if (line.cur && line.cur.type === 'hero') return true;
+    if (line.queue.some(it => it.type === 'hero')) return true;
   }
-  if (S.training) { toast('训练场正忙，请等待当前单位完成', 'warn', 'sword'); Sound.play('ui'); return; }
+  return false;
+}
+function tryTrain(type, n = 1) {
+  if (S.mode !== 'playing' || S.paused || S.ended) return 0;
+  const def = U[type];
+  const cat = def.producer;
+  const line = S.prod[cat];
+  if (!line) return 0;
   const pro = producerFor(type);
-  if (!pro) { toast(`需要先建造${B[U[type].producer].name}`, 'warn', 'castle'); Sound.play('ui'); return; }
-  if (S.gold < U[type].cost) { toast('金币不足', 'warn', 'coin'); Sound.play('ui'); return; }
-  if (popUsed() + U[type].pop > popCap()) { toast('人口已满，请建造农舍', 'warn', 'house'); Sound.play('ui'); return; }
-  S.gold -= U[type].cost;
-  S.training = { type, elapsed: 0, total: U[type].time, producer: pro.id };
+  if (!pro) { toast(`需要先建造${B[cat].name}`, 'warn', 'castle'); Sound.play('ui'); return 0; }
+  const cap = 12;
+  let added = 0;
+  for (let i = 0; i < n; i++) {
+    if (line.queue.length + (line.cur ? 1 : 0) >= cap) break;
+    if (def.hero && (heroAlive() || heroInProduction())) break;
+    if (S.gold < def.cost) break;
+    if (popUsed() + prodReservedPop(cat) + def.pop > popCap()) break;
+    S.gold -= def.cost;
+    line.queue.push({ type, elapsed: 0, total: def.time, producer: pro.id });
+    added++;
+  }
+  if (!added) {
+    if (line.queue.length + (line.cur ? 1 : 0) >= cap) toast('该产线已排满，等待出兵后再排', 'warn', 'sword');
+    else if (def.hero && (heroAlive() || heroInProduction())) toast('英雄已在场或正在受封', 'warn', 'hero');
+    else if (S.gold < def.cost) toast('金币不足', 'warn', 'coin');
+    else toast('人口已满，请建造农舍', 'warn', 'house');
+    Sound.play('ui');
+    return 0;
+  }
+  if (!line.cur) line.cur = line.queue.shift();
+  if (added < n) toast(`只排入 ${added} 个 ${def.name}（金币/人口/队列限制）`, 'warn', 'sword');
+  else if (added > 1) toast(`已排队 ${added} 个 ${def.name}`, '', 'sword');
   Sound.play('ui');
   updateHud(true); renderQueue(); updateCards();
+  return added;
 }
 function updateTraining(dt) {
-  if (!S.training) return;
-  S.training.elapsed += dt * trainingSpeed();
-  if (S.training.elapsed < S.training.total) return;
-  const t = S.training;
-  S.training = null;
-  let b = S.buildings.find(x => x.id === t.producer && x.team === PLAYER);
-  if (!b) b = producerFor(t.type) || S.buildings.find(x => x.team === PLAYER && x.type === 'keep');
-  if (!b) return;
-  const p = spawnPointFor(b);
-  const u = addUnit(t.type, PLAYER, p.x, p.y);
-  u.home = { x: p.x, y: p.y };
-  if (b.rally) {
-    orderMove(u, b.rally.x + rnd(-.8, .8), b.rally.y + rnd(-.8, .8));
+  let changed = false;
+  for (const cat of ['keep', 'barracks', 'workshop']) {
+    const line = S.prod[cat];
+    if (!line || !line.cur) continue;
+    line.cur.elapsed += dt * trainingSpeedFor(cat);
+    if (line.cur.elapsed < line.cur.total) continue;
+    const t = line.cur;
+    line.cur = null;
+    let b = S.buildings.find(x => x.id === t.producer && x.team === PLAYER);
+    if (!b) b = producerFor(t.type) || S.buildings.find(x => x.team === PLAYER && x.type === 'keep');
+    if (b) {
+      const p = spawnPointFor(b);
+      const u = addUnit(t.type, PLAYER, p.x, p.y);
+      u.home = { x: p.x, y: p.y };
+      if (b.rally) orderMove(u, b.rally.x + rnd(-.8, .8), b.rally.y + rnd(-.8, .8));
+      if (t.type === 'hero') {
+        u.lastHurt = S.time;
+        floatText(p.x, p.y, '狮心英雄', '#ffd77a');
+        toast('狮心英雄响应号召，加入战场！', '', 'hero');
+        Sound.play('horn');
+      } else {
+        floatText(p.x, p.y, U[t.type].name, '#ecd28b');
+        Sound.play('build');
+      }
+    }
+    if (line.queue.length) line.cur = line.queue.shift();
+    changed = true;
   }
-  if (t.type === 'hero') {
-    u.lastHurt = S.time;
-    floatText(p.x, p.y, '狮心英雄', '#ffd77a');
-    toast('狮心英雄响应号召，加入战场！', '', 'hero');
-    Sound.play('horn');
-  } else {
-    floatText(p.x, p.y, U[t.type].name, '#ecd28b');
-    Sound.play('build');
-  }
-  updateHud(true); renderQueue(); updateCards();
+  if (changed) { updateHud(true); renderQueue(); updateCards(); }
 }
 
 /* ------------- building placement ------------- */
@@ -2467,7 +2507,7 @@ function update(dt) {
   solveOverlap();
   separateUnits();
   for (const u of S.units) pushOutOfBuildings(u);
-  if (S.training) updateTraining(dt);
+  updateTraining(dt);
   Sound.ambient(dt);
   updateHud();
   if (S.time - (S.lastQueue || 0) > .15) {
@@ -3684,7 +3724,7 @@ function renderCards() {
   els.grid.style.gridTemplateColumns = `repeat(${Math.min(4, keys.length)}, 1fr)`;
   $$('.cmd-card', els.grid).forEach(btn => {
     const key = btn.dataset.key;
-    btn.addEventListener('click', () => onCard(key));
+    btn.addEventListener('click', (e) => onCard(key, e));
     btn.addEventListener('mouseenter', () => showTooltip(key, btn));
     btn.addEventListener('mouseleave', hideTooltip);
   });
@@ -3707,7 +3747,7 @@ function updateCards() {
     } else {
       const pro = producerFor(key);
       unavailable = !pro || S.gold < U[key].cost || popUsed() + U[key].pop > popCap();
-      if (U[key].hero && (heroAlive() || (S.training && S.training.type === 'hero'))) unavailable = true;
+      if (U[key].hero && (heroAlive() || heroInProduction())) unavailable = true;
     }
     btn.classList.toggle('unavailable', unavailable && !btn.classList.contains('active'));
   });
@@ -3759,12 +3799,12 @@ function showTooltip(key, btn) {
   els.tip.style.left = left + 'px'; els.tip.style.top = top + 'px';
 }
 function hideTooltip() { if (els.tip) els.tip.hidden = true; }
-function onCard(key) {
+function onCard(key, ev) {
   if (S.mode !== 'playing' || S.paused) return;
   if (TECH[key]) { researchTech(key); return; }
   if (!isUnlocked(key)) { toast('该军备尚未解锁，通关章节后获得', 'warn', 'scroll'); Sound.play('ui'); return; }
   if (B[key]) startPlacement(key);
-  else tryTrain(key);
+  else tryTrain(key, ev && ev.shiftKey ? 5 : 1);
 }
 function researchTech(key) {
   if (S.mode !== 'playing' || S.paused) return;
@@ -3860,13 +3900,17 @@ function castSuperAt(sx, sy) {
 }
 function renderQueue() {
   if (!els.queue) return;
-  if (!S.training) {
-    els.queue.innerHTML = `<div class="queue-line"><span class="queue-label">训练场空闲</span></div>`;
-    return;
+  const labels = { keep: '主堡', barracks: '兵营', workshop: '车厂' };
+  const rows = [];
+  for (const cat of ['barracks', 'workshop', 'keep']) {
+    const line = S.prod[cat];
+    if (!line || !line.cur) continue;
+    const pct = clamp(line.cur.elapsed / line.cur.total, 0, 1) * 100;
+    const sp = trainingSpeedFor(cat);
+    const q = line.queue.length;
+    rows.push(`<div class="queue-line"><span class="queue-label">${labels[cat]} · ${U[line.cur.type].name}${q ? ` +${q}` : ''}${sp > 1 ? ` · ×${sp.toFixed(1)}` : ''}</span><div class="queue-pip"><i style="width:${pct}%"></i></div><span class="queue-pct">${Math.floor(pct)}%</span></div>`);
   }
-  const pct = clamp(S.training.elapsed / S.training.total, 0, 1) * 100;
-  const sp = trainingSpeed();
-  els.queue.innerHTML = `<div class="queue-line"><span class="queue-label">训练 ${U[S.training.type].name}${sp > 1 ? ` · 速度 ×${sp.toFixed(1)}` : ''}</span><div class="queue-pip"><i style="width:${pct}%"></i></div><span class="queue-pct">${Math.floor(pct)}%</span></div>`;
+  els.queue.innerHTML = rows.length ? rows.join('') : `<div class="queue-line"><span class="queue-label">产线空闲</span></div>`;
 }
 function updateHud(force = false) {
   if (!els.gold) return;
@@ -3981,6 +4025,17 @@ function showBanner(n) {
   clearTimeout(S.bannerTimer);
   S.bannerTimer = setTimeout(() => els.banner.classList.remove('show'), 3000);
 }
+function battleRating() {
+  let score = 100;
+  score -= Math.min(40, S.time / 15);
+  score -= Math.min(30, S.stats.losses * 2);
+  score += Math.min(20, S.stats.kills / 10);
+  if (score >= 85) return 'S';
+  if (score >= 70) return 'A';
+  if (score >= 55) return 'B';
+  if (score >= 40) return 'C';
+  return 'D';
+}
 function showEndScreen(win) {
   S.lastWin = win;
   const end = $('#end-screen');
@@ -3989,22 +4044,36 @@ function showEndScreen(win) {
   const L = currentLevel();
   const next = LEVELS[S.campaignLevel + 1];
   const hasNext = win && S.run === 'campaign' && !!next;
-  $('#end-kicker').textContent = S.run === 'skirmish'
-    ? (win ? '遭遇战 · 大捷' : '遭遇战 · 失利')
-    : (win ? (hasNext ? `第${CN_NUM[S.campaignLevel + 1]}章告捷` : '战役完成') : '王国的黄昏');
-  $('#end-title').textContent = win ? '胜利' : '沦陷';
+  const n = S.campaignLevel + 1;
+  const cn = CN_NUM[n] || n;
+  if (S.run === 'skirmish') {
+    $('#end-kicker').textContent = win ? '遭遇战 · 大捷' : '遭遇战 · 失利';
+    $('#end-title').textContent = win ? '胜 利' : '失 败';
+  } else {
+    $('#end-kicker').textContent = win ? `第 ${cn} 章 · ${L.name} · 告捷` : `第 ${cn} 章 · ${L.name} · 沦陷`;
+    $('#end-title').textContent = win ? '胜 利' : '失 败';
+  }
   if (win) {
-    $('#end-lore').innerHTML = `${L.rewardName ? `新军备已解锁：<b style="color:#f0d09a">${L.rewardName}</b><br>` : ''}${hasNext ? `下一章：${next.name} · 敌军特质：${next.trait}` : '黑鸦之王已经倒下，铁与王冠重归赤蔷薇。'}`;
+    $('#end-lore').innerHTML = `${L.rewardName ? `新军备已解锁：<b style="color:#f0d09a">${L.rewardName}</b><br>` : ''}${hasNext ? `下一章：${next.name} · 敌军特质：${next.trait}` : (S.run === 'campaign' ? '黑鸦之王已经倒下，铁与王冠重归赤蔷薇。' : '黑鸦主堡已被踏平，战场归你所有。')}`;
     if (S.run === 'campaign') {
       const st = STORY[S.campaignLevel];
       if (st && st.outro) $('#end-lore').innerHTML += `<br><br><span class="end-outro">${st.outro}</span>`;
       if (!hasNext) $('#end-lore').innerHTML += `<br><br><b class="end-finale">${FINALE}</b>`;
     }
   } else {
-    $('#end-lore').textContent = `败于「${L.name}」。赤蔷薇需要一位新的统帅。`;
+    $('#end-lore').innerHTML = S.run === 'campaign'
+      ? `败于「${L.name}」。赤蔷薇需要一位新的统帅——整顿残部，再战一次。`
+      : '主堡陷落，部队星散。调整开局资源与阵容，再来一场。';
   }
-  $('#btn-restart').textContent = win ? (hasNext ? '进入下一章' : '再战终章') : '重新挑战';
-  $('#battle-stats').innerHTML = `<div><b>${fmtTime(S.time)}</b><span>战役时长</span></div><div><b>${S.stats.kills}</b><span>歼灭敌军</span></div><div><b>${S.stats.gathered}</b><span>采集金币</span></div>`;
+  $('#btn-restart').textContent = win ? (hasNext ? '进入下一章' : (S.run === 'campaign' ? '再战终章' : '再战一场')) : '重新挑战';
+  const rating = win ? battleRating() : '—';
+  $('#battle-stats').innerHTML = [
+    `<div><b>${fmtTime(S.time)}</b><span>用时</span></div>`,
+    `<div><b>${S.stats.kills}</b><span>歼灭</span></div>`,
+    `<div><b>${S.stats.losses}</b><span>损失</span></div>`,
+    `<div><b>${S.stats.gathered}</b><span>采集</span></div>`,
+    `<div class="rating rating-${rating}"><b>${rating}</b><span>评价</span></div>`
+  ].join('');
   Sound.play(win ? 'victory' : 'defeat');
 }
 function hideEndScreen() { $('#end-screen').hidden = true; }
@@ -4828,6 +4897,11 @@ if (params.get('debug') === '1') {
       unlocked: S.unlocked.size,
       sidebar: Math.round(sidebarWidth()),
       cam: [Math.round(S.cam.x), Math.round(S.cam.y)],
+      prod: {
+        keep: (S.prod.keep.cur ? S.prod.keep.cur.type : '-') + '/' + S.prod.keep.queue.length,
+        barracks: (S.prod.barracks.cur ? S.prod.barracks.cur.type : '-') + '/' + S.prod.barracks.queue.length,
+        workshop: (S.prod.workshop.cur ? S.prod.workshop.cur.type : '-') + '/' + S.prod.workshop.queue.length
+      },
       edgeDelta: window.__edgeDelta || 0
     });
   };
@@ -4854,6 +4928,37 @@ if (edgeTest && S.mode === 'playing') {
   for (let i = 0; i < 30; i++) updateCamera(1 / 30);
   window.__edgeDelta = Math.round(S.cam.x - x0);
   if (window.__dbgUpdate) window.__dbgUpdate();
+}
+// 调试用：?give=barracks,workshop 在开局主堡旁直接补齐生产建筑，便于无头测试队列。
+const giveSpec = params.get('give');
+if (giveSpec && S.mode === 'playing') {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  let kx = keep ? keep.x : 9, ky = keep ? keep.y : 35;
+  for (const t of giveSpec.split(',')) {
+    if (!B[t]) continue;
+    const spot = findKeepSpot(kx + 5, ky + 3);
+    if (spot) {
+      clearKeepArea(spot.tx, spot.ty);
+      const b = addBuilding(t, spot.tx, spot.ty, PLAYER);
+      b.constructed = true; b.progress = 1;
+      kx = b.x + 4;
+    }
+  }
+}
+// 调试用：?train=spearman:3,archer:2 直接向对应产线排队，便于无头测试。
+const trainSpec = params.get('train');
+if (trainSpec && S.mode === 'playing') {
+  for (const part of trainSpec.split(',')) {
+    const bits = part.split(':');
+    if (U[bits[0]]) tryTrain(bits[0], parseInt(bits[1] || '1', 10));
+  }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+// 调试用：?end=win|lose 直接触发结算画面，便于无头测试结算 UI。
+const endSpec = params.get('end');
+if (endSpec && S.mode === 'playing') {
+  S.stats.kills = 42; S.stats.losses = 3; S.stats.gathered = 2600;
+  endGame(endSpec === 'win');
 }
 const warpSec = parseFloat(params.get('warp') || '0');
 if (Number.isFinite(warpSec) && warpSec > 0 && S.mode === 'playing') {
