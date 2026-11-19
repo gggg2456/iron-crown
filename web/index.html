@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>铁与王冠 · Iron &amp; Crown</title>
+<meta name="description" content="一款中世纪风格的网页即时战略游戏：采金伐木，筑城练兵，击溃黑鸦公国。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<svg class="svg-defs" aria-hidden="true">
+  <defs>
+    <symbol id="i-crest" viewBox="0 0 64 64">
+      <path d="M32 5 54 13v18c0 13-9 23-22 29C19 54 10 44 10 31V13L32 5Z" fill="none" stroke="currentColor" stroke-width="2.2"/>
+      <path d="M32 11 48 17v14c0 10-6.5 18-16 23-9.5-5-16-13-16-23V17l16-6Z" fill="currentColor" opacity=".1"/>
+      <path d="M24 23h4v7h4v-7h4v7h4v-7h4v12c0 5-4 8-10 8s-10-3-10-8V23Z" fill="currentColor"/>
+      <path d="M28 40h8M32 42v7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-castle" viewBox="0 0 48 48">
+      <path d="M8 20h6v-7l5 3 5-3v7h6V12l5 3 5-3v8h6v22H8V20Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M8 27h32M19 42V31c0-3 2.5-5 5-5s5 2 5 5v11" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M14 24v3M34 24v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-house" viewBox="0 0 48 48">
+      <path d="M7 24 24 10l17 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M11 23v18h26V23M19 41V30h10v11" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M32 14V8h4v10" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M14 27h5M29 27h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-store" viewBox="0 0 48 48">
+      <path d="M8 17 24 8l16 9v24H8V17Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M8 17h32M17 17v24M31 17v24M8 29h32" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".8"/>
+      <path d="M21 23h6v6h-6z" fill="currentColor" opacity=".45"/>
+    </symbol>
+    <symbol id="i-tower" viewBox="0 0 48 48">
+      <path d="M14 41V16h20v25M11 16h26M17 16v-6l3 2 4-2 4 2 3-2v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M22 41V32h4v9M19 22h3M26 22h3M19 27h3M26 27h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-wall" viewBox="0 0 48 48">
+      <path d="M8 18h7v-5h7v5h7v-5h7v5h4v22H8V18Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M8 26h32M8 34h32M17 18v8M28 18v8M22 26v8M33 26v8" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    </symbol>
+    <symbol id="i-barracks" viewBox="0 0 48 48">
+      <path d="M7 21 24 9l17 12v20H7V21Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M7 21h34M17 41V30h14v11" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M24 16v9M20 20l4 5 4-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-stable" viewBox="0 0 48 48">
+      <path d="M9 22 24 10l15 12v19H9V22Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M9 22h30M17 41V29h14v12M24 29v12M17 35h14" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    </symbol>
+    <symbol id="i-workshop" viewBox="0 0 48 48">
+      <path d="M7 41V22l9 5v-9l10 4V14l10 5v22H7Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="14" cy="37" r="4" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="34" cy="37" r="4" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M22 30 30 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-peasant" viewBox="0 0 48 48">
+      <circle cx="24" cy="15" r="6" fill="none" stroke="currentColor" stroke-width="2.2"/>
+      <path d="M14 41c0-8 4-13 10-13s10 5 10 13M24 8v4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M33 12v28M28 18l10-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-sword" viewBox="0 0 48 48">
+      <path d="m33 7 8 8-19 19-8-8L33 7Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="m11 29 8 8M14 34l-6 6M9 31l8 8M13 37l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-archer" viewBox="0 0 48 48">
+      <path d="M13 9c13 5 20 14 20 30" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="m13 9 1 30M16 13l24 20M30 22l10 11-3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="m36 12 5 5-6 6-5-5 6-6Z" fill="currentColor" opacity=".5"/>
+    </symbol>
+    <symbol id="i-knight" viewBox="0 0 48 48">
+      <path d="M13 41c-2-8 1-14 7-18v-6l-3-5 5 2 3 4 5-2 6 4-2 6-7 2v4l8 1 5 12H13Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M22 13c3-2 5 0 6 2M30 12l3-4M20 26l-6 5M35 9h7M39 6v7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-hero" viewBox="0 0 48 48">
+      <path d="M14 42c-2-9 1-15 7-19v-6l-4-5 6 2 3 5 5-2 7 4-2 6-7 2v4l9 2 5 11H14Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="m17 10 3-6 4 5 5-5 3 6-8 2-7-2Z" fill="currentColor" opacity=".8"/>
+      <path d="M29 12l4-4M20 27l-6 5M36 9h6M39 6v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="24" cy="23" r="2" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-catapult" viewBox="0 0 48 48">
+      <path d="M9 38h30M14 38l8-12 8 12M22 26 17 9M17 9l15 4-8 8M13 38v5M35 38v5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="17" cy="39" r="4" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="31" cy="39" r="4" fill="none" stroke="currentColor" stroke-width="2"/>
+    </symbol>
+    <symbol id="i-coin" viewBox="0 0 32 32">
+      <circle cx="16" cy="16" r="10" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M16 9v14M12 12.5c0-1.8 1.8-3 4-3s4 1.2 4 3-1.4 2.5-4 3-4 1.2-4 3 1.8 3 4 3 4-1.2 4-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-wood" viewBox="0 0 32 32">
+      <path d="m6 22 14-14 6 6-14 14-6-6Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="m11 17 3-3M16 12l3-3M15 21l3-3M20 16l3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="m22 8 3 3M20 6l6 6" stroke="currentColor" stroke-width="1.6" opacity=".65"/>
+    </symbol>
+    <symbol id="i-pop" viewBox="0 0 32 32">
+      <circle cx="16" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M7 27c0-6 4-10 9-10s9 4 9 10M5 16c0-2 1.5-4 4-4M27 16c0-2-1.5-4-4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24">
+      <path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-play" viewBox="0 0 24 24">
+      <path d="M8 5v14l11-7L8 5Z" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-sound" viewBox="0 0 24 24">
+      <path d="M4 9v6h4l5 4V5L8 9H4Z" fill="currentColor"/>
+      <path d="M16 8c1.5 2 1.5 6 0 8M19 5c3 4 3 10 0 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-mute" viewBox="0 0 24 24">
+      <path d="M4 9v6h4l5 4V5L8 9H4Z" fill="currentColor"/>
+      <path d="m16 9 5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24">
+      <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 32 32">
+      <path d="M16 3 27 7v10c0 6-4.5 10.5-11 13C9.5 27.5 5 23 5 17V7l11-4Z" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M16 8v15M10 13h12" stroke="currentColor" stroke-width="1.6" opacity=".7"/>
+    </symbol>
+    <symbol id="i-scroll" viewBox="0 0 32 32">
+      <path d="M8 5h18v21c0 3-5 3-5 0V8H8c-3 0-3 5 0 5h3v14h15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M14 13h8M14 18h8M14 23h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-flag" viewBox="0 0 32 32">
+      <path d="M9 29V4M9 5h16l-4 6 4 6H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div id="app">
+  <canvas id="game-canvas"></canvas>
+  <div class="vignette"></div>
+  <div class="grain"></div>
+
+  <div id="ui">
+    <header id="topbar">
+      <div class="brand">
+        <div class="brand-crest"><svg><use href="#i-crest"></use></svg></div>
+        <div class="brand-text">
+          <span class="brand-cn">铁与王冠</span>
+          <span class="brand-en">IRON &amp; CROWN</span>
+        </div>
+      </div>
+
+      <div class="resources">
+        <div class="resource" title="金币：招募士兵、修筑建筑">
+          <svg class="res-icon gold"><use href="#i-coin"></use></svg>
+          <div><b id="gold-value">600</b><small>金币</small></div>
+        </div>
+        <div class="resource" title="人口：建造农舍以提升上限">
+          <svg class="res-icon pop"><use href="#i-pop"></use></svg>
+          <div><b id="pop-value">0/16</b><small>人口</small></div>
+        </div>
+        <div class="resource" title="部队：当前可作战的士兵数量">
+          <svg class="res-icon pop"><use href="#i-shield"></use></svg>
+          <div><b id="army-value">0</b><small>部队</small></div>
+        </div>
+      </div>
+
+      <div class="mission">
+        <span class="mission-kicker">第一章 · 黑鸦压境</span>
+        <span class="mission-objective"><i></i>摧毁黑鸦主堡</span>
+      </div>
+
+      <div class="sys-buttons">
+        <button id="btn-super" class="icon-btn super-btn" title="天火圣裁" aria-label="天火圣裁" hidden>
+          <svg><use href="#i-catapult"></use></svg><span id="super-cd" class="super-cd"></span>
+        </button>
+        <button id="btn-sound" class="icon-btn" title="音效开关" aria-label="音效开关"><svg><use href="#i-sound"></use></svg></button>
+        <button id="btn-pause" class="icon-btn" title="暂停 (P)" aria-label="暂停"><svg><use href="#i-pause"></use></svg></button>
+        <button id="btn-fullscreen" class="icon-btn" title="全屏" aria-label="全屏"><svg><use href="#i-expand"></use></svg></button>
+      </div>
+    </header>
+
+    <aside id="sidebar">
+      <div class="panel minimap-panel">
+        <div class="panel-corner tl"></div><div class="panel-corner tr"></div>
+        <div class="panel-corner bl"></div><div class="panel-corner br"></div>
+        <div class="minimap-head">
+          <span>王 国 疆 域</span>
+          <span class="minimap-sub">点击侦察</span>
+        </div>
+        <div class="minimap-frame">
+          <canvas id="minimap" width="576" height="320"></canvas>
+          <div class="minimap-scan"></div>
+          <div class="mini-legend"><i class="ally"></i>我军 <i class="enemy"></i>黑鸦</div>
+        </div>
+      </div>
+
+      <div class="command-panel panel">
+        <div class="panel-corner tl"></div><div class="panel-corner tr"></div>
+        <div class="panel-corner bl"></div><div class="panel-corner br"></div>
+        <div id="command-tabs" class="command-tabs">
+          <button class="tab active" data-tab="build"><span>建设</span><em>Z</em></button>
+          <button class="tab" data-tab="units"><span>兵种</span><em>X</em></button>
+          <button class="tab" data-tab="defense"><span>工事</span><em>C</em></button>
+          <button class="tab" data-tab="siege"><span>车厂</span><em>V</em></button>
+          <button class="tab" data-tab="tech"><span>科技</span><em>B</em></button>
+        </div>
+        <div id="command-grid" class="command-grid"></div>
+        <div id="command-queue" class="command-queue"></div>
+      </div>
+
+      <div class="selection-panel panel" id="selection-panel">
+        <div class="panel-corner tl"></div><div class="panel-corner tr"></div>
+        <div class="panel-corner bl"></div><div class="panel-corner br"></div>
+        <div class="selection-empty" id="selection-empty">
+          <svg><use href="#i-shield"></use></svg>
+          <div><strong>未选中部队</strong><span>左键选择，拖拽框选多支部队</span></div>
+        </div>
+        <div class="selection-content" id="selection-content" hidden></div>
+      </div>
+    </aside>
+
+    <div id="hintbar">
+      <span class="hint"><kbd>左键</kbd> 选择 / 移动 / 攻击</span>
+      <span class="hint"><kbd>右键</kbd> 攻击移动 / 取消</span>
+      <span class="hint"><kbd>E</kbd> 停止</span>
+      <span class="hint"><kbd>拖拽</kbd> 框选部队</span>
+      <span class="hint"><kbd>建造</kbd> 需靠近己方建筑</span>
+      <span class="hint"><kbd>Q</kbd> 攻击移动</span>
+      <span class="hint"><kbd>T</kbd> 强制攻击</span>
+      <span class="hint"><kbd>F</kbd> 全选部队</span>
+      <span class="hint"><kbd>Ctrl/Alt+1~9</kbd> 编队/呼叫</span>
+      <span class="hint"><kbd>H</kbd> 回主堡</span>
+      <span class="hint"><kbd>Tab</kbd> 切页</span>
+      <span class="hint"><kbd>WASD</kbd> 移动视角</span>
+      <span class="hint"><kbd>空格</kbd> 回到主堡</span>
+      <span class="hint"><kbd>Esc</kbd> 取消</span>
+    </div>
+
+    <div id="toasts" class="toasts"></div>
+    <div id="cursor-tip" class="cursor-tip"></div>
+    <div id="tooltip" class="tooltip" hidden></div>
+
+    <div id="placement-hint" class="placement-hint" hidden>
+      <span><kbd>左键</kbd> 建造</span><span><kbd>右键</kbd> 取消</span>
+    </div>
+
+    <section id="start-screen" class="screen">
+      <div class="start-embers" aria-hidden="true"></div>
+      <div class="start-inner">
+        <div class="start-topline"><span></span><em>中世纪即时战略</em><span></span></div>
+        <div class="title-block">
+          <svg class="title-crest left"><use href="#i-crest"></use></svg>
+          <div>
+            <h1><span>铁</span><i>与</i><span>王</span><span>冠</span></h1>
+            <p class="title-en">IRON &amp; CROWN</p>
+          </div>
+          <svg class="title-crest right"><use href="#i-crest"></use></svg>
+        </div>
+        <p class="start-lore">黑鸦公国的铁蹄踏碎了边境的宁静。<br>采金募兵、修筑箭塔，率领赤蔷薇的军队夺回王座。</p>
+
+        <div class="difficulty">
+          <button class="diff-option" data-diff="squire"><b>侍从</b><span>轻松经营</span></button>
+          <button class="diff-option active" data-diff="knight"><b>骑士</b><span>标准战役</span></button>
+          <button class="diff-option" data-diff="king"><b>国王</b><span>严酷围城</span></button>
+        </div>
+        <button id="ally-toggle" class="ally-toggle" type="button">
+          <b>青杉盟军</b><span>AI 队友 · 自行出兵 · 共享视野</span>
+        </button>
+
+        <button id="btn-start" class="start-btn">
+          <span class="start-btn-deco"></span>
+          <span class="start-btn-main">开 始 征 战</span>
+          <span class="start-btn-sub">ENTER THE REALM</span>
+        </button>
+
+        <div class="start-controls">
+          <div><svg><use href="#i-sword"></use></svg><span><b>左键</b>移动 · <b>右键</b>攻击移动 · <b>E</b>停止</span></div>
+          <div><svg><use href="#i-wall"></use></svg><span><b>WASD</b>巡视战场 · <b>Q</b>攻击移动</span></div>
+          <div><svg><use href="#i-scroll"></use></svg><span><b>拖拽框选</b>集结大军 · <b>F</b>全选</span></div>
+          <div><svg><use href="#i-shield"></use></svg><span><b>Ctrl+1~9</b>编队 · <b>Alt+1~9</b>呼叫 · <b>Tab</b>切页</span></div>
+        </div>
+        <p class="start-foot">无需安装 · 建议使用 1280×720 以上分辨率游玩</p>
+      </div>
+    </section>
+
+    <section id="pause-screen" class="screen small-screen" hidden>
+      <div class="modal panel">
+        <div class="panel-corner tl"></div><div class="panel-corner tr"></div>
+        <div class="panel-corner bl"></div><div class="panel-corner br"></div>
+        <span class="modal-kicker">战事暂歇</span>
+        <h2>暂停</h2>
+        <p>你的王国正等待你的归来。</p>
+        <div class="modal-actions">
+          <button id="btn-resume" class="btn gold">继续征战</button>
+          <button id="btn-restart-pause" class="btn ghost">重新开始</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="end-screen" class="screen small-screen" hidden>
+      <div class="modal end-modal panel">
+        <div class="panel-corner tl"></div><div class="panel-corner tr"></div>
+        <div class="panel-corner bl"></div><div class="panel-corner br"></div>
+        <span class="modal-kicker" id="end-kicker">王国的命运</span>
+        <h2 id="end-title">胜利</h2>
+        <p id="end-lore">黑鸦的旗帜已经倒下，赤蔷薇在废墟上重新绽放。</p>
+        <div class="battle-stats" id="battle-stats"></div>
+        <div class="modal-actions">
+          <button id="btn-restart" class="btn gold">再战一场</button>
+          <button id="btn-menu" class="btn ghost">返回标题</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>

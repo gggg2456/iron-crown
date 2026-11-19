@@ -1,0 +1,19 @@
+Copyright (c) 2026 Iron Crown. All rights reserved.
+
+「铁与王冠 · Iron & Crown」的源代码、美术、音频与文案均为本项目作者所有，
+未经书面许可，不得再分发、转售或用于商业产品。本仓库以 source-available
+形式公开，便于阅读、学习与问题反馈，并不构成开源许可（非 MIT / GPL / Apache）。
+
+The source code, artwork, audio and text of "Iron & Crown" are the property of
+its author. No part may be redistributed, resold or used in a commercial product
+without written permission. This repository is source-available for reading,
+learning and bug reports; it is not an open-source license.
+
+第三方组件
+----------
+- Electron（MIT）及其 Chromium 组件：独立版发行包内附带完整许可文件
+  （LICENSE、LICENSES.chromium.html），随包分发时请一并保留。
+- 单位语音由 Windows 中文语音合成（Microsoft Huihui）离线生成，
+  商用或再分发前请自行确认所用语音的授权范围。
+- 界面字体使用系统字体回退（Noto Serif SC / Cinzel / 宋体等），
+  仓库内未内嵌任何字体文件。
