@@ -479,3 +479,7 @@ body.menu-mode #game-canvas { cursor: default; }
   .start-btn { margin-top: 18px; height: 64px; }
   .start-controls { margin-top: 20px; }
 }
+
+/* ready-to-place building card */
+.cmd-card.ready { border-color: rgba(240,209,138,.85); box-shadow: 0 0 0 1px rgba(240,209,138,.5), inset 0 0 24px rgba(240,209,138,.16); animation: readyPulse 1.3s ease-in-out infinite; }
+@keyframes readyPulse { 50% { box-shadow: 0 0 0 2px rgba(240,209,138,.9), inset 0 0 30px rgba(240,209,138,.28); } }

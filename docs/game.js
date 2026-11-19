@@ -133,8 +133,9 @@ const U = {
   hero: {
     name: '狮心英雄', enemyName: '黑鸦冠军', hp: 820, speed: 2.65, dmg: 44, range: 1.25,
     cd: 1.05, aggro: 7.2, pop: 3, cost: 280, time: 18, h: 46, producer: 'keep', icon: 'hero',
+    req: 'cathedral',
     role: '英雄单位（唯一）',
-    desc: '全场只能拥有一名。普攻每 8 秒触发「裂地斩」，重创目标周围的敌军；脱战 5 秒后持续自愈。'
+    desc: '需要先建成大教堂（T3）才能受封。全场只能拥有一名；普攻每 8 秒触发「裂地斩」，脱战 5 秒后持续自愈。'
   },
   spearman: {
     name: '长矛兵', enemyName: '黑鸦长矛兵', hp: 140, speed: 1.85, dmg: 14, range: 1.3,
@@ -455,7 +456,8 @@ const S = {
   placing: null, drag: null, panning: null,
   mouse: { x: 0, y: 0, wx: 0, wy: 0, inside: false },
   keys: {},
-  prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
+  buildQ: { cur: null, queue: [] }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -963,6 +965,7 @@ function resetWorld() {
   S.placing = null; S.drag = null; S.time = 0;
   S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
   S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
+  S.buildQ = { cur: null, queue: [] };
   S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.enemySuper = null; S.radar = false;
   S.stats = { kills: 0, losses: 0, gathered: 0 };
   const L = currentLevel();
@@ -1266,30 +1269,35 @@ function clampCamera() {
   S.cam.x = clamp(S.cam.x, pad - MAP_PX_W * S.cam.z, VW - pad);
   S.cam.y = clamp(S.cam.y, pad - MAP_PX_H * S.cam.z, VH - pad);
 }
-const EDGE_TRIGGER = 26, EDGE_BOOST = 1.15;
+const EDGE_ZONE = 36, EDGE_MAX = 1.3;
+function panBounds() {
+  const b = { left: 0, top: 0, right: VW, bottom: VH };
+  const top = document.getElementById('topbar');
+  if (top) { const r = top.getBoundingClientRect(); if (r.height > 4) b.top = Math.max(b.top, r.bottom + 2); }
+  const side = document.getElementById('sidebar');
+  if (side && S.mode !== 'menu') {
+    const r = side.getBoundingClientRect();
+    if (r.width > 4) b.right = Math.min(b.right, r.left - 2);
+  }
+  const hint = document.getElementById('hintbar');
+  if (hint && !hint.hidden) {
+    const r = hint.getBoundingClientRect();
+    if (r.height > 4) b.bottom = Math.min(b.bottom, r.top - 2);
+  }
+  return b;
+}
 function edgePan(dt) {
   if (!S.mouse.inside) return;
-  if (S.drag && S.drag.active) return;
-  const sp = 520 * dt / S.cam.z;
-  const rightLimit = VW - sidebarWidth() - 8;
-  const topLimit = 92, bottomLimit = VH - 54;
-  const mx = clamp(S.mouse.x, 0, VW), my = clamp(S.mouse.y, 0, VH);
-  if (mx > rightLimit) return;
-  if (mx > rightLimit - EDGE_TRIGGER) {
-    const t = clamp((mx - (rightLimit - EDGE_TRIGGER)) / EDGE_TRIGGER, 0, 1);
-    S.cam.x -= sp * t * EDGE_BOOST;
-  } else if (mx < EDGE_TRIGGER) {
-    const t = clamp((EDGE_TRIGGER - mx) / EDGE_TRIGGER, 0, 1);
-    S.cam.x += sp * t * EDGE_BOOST;
-  }
-  if (my > bottomLimit) return;
-  if (my > bottomLimit - EDGE_TRIGGER) {
-    const t = clamp((my - (bottomLimit - EDGE_TRIGGER)) / EDGE_TRIGGER, 0, 1);
-    S.cam.y -= sp * t * EDGE_BOOST;
-  } else if (my < topLimit + EDGE_TRIGGER && my > topLimit) {
-    const t = clamp((topLimit + EDGE_TRIGGER - my) / EDGE_TRIGGER, 0, 1);
-    S.cam.y += sp * t * EDGE_BOOST;
-  }
+  const b = panBounds();
+  const m = S.mouse;
+  if (m.x >= b.right || m.y >= b.bottom || m.x <= b.left || m.y <= b.top) return;
+  const ramp = (dist) => clamp((EDGE_ZONE - dist) / EDGE_ZONE, 0, 1);
+  const fx = ramp(b.right - m.x) - ramp(m.x - b.left);
+  const fy = ramp(b.bottom - m.y) - ramp(m.y - b.top);
+  if (!fx && !fy) return;
+  const sp = 520 * dt / S.cam.z * EDGE_MAX;
+  S.cam.x -= sp * fx;
+  S.cam.y -= sp * fy;
 }
 function updateCamera(dt) {
   if (S.mode === 'menu' || S.mode === 'ended' || S.paused) return;
@@ -1428,6 +1436,139 @@ function pushOutOfBuildings(u) {
     else if (m === d3) u.y = y1; else u.y = y2;
   }
 }
+function walkBlocked(tx, ty, r) {
+  const x = tx + .5, y = ty + .5;
+  if (terrainAt(x, y) === 'water') return true;
+  for (const b of S.buildings) {
+    if (x > b.tx - .24 - r && x < b.tx + b.w + .24 + r
+      && y > b.ty - .24 - r && y < b.ty + b.d + .24 + r) return true;
+  }
+  return false;
+}
+function segBlocked(ax, ay, bx, by, r) {
+  const d = Math.hypot(bx - ax, by - ay);
+  const steps = Math.max(1, Math.ceil(d / .3));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (walkBlocked(Math.floor(ax + (bx - ax) * t), Math.floor(ay + (by - ay) * t), r)) return true;
+  }
+  return false;
+}
+function lineBlocked(u, tx, ty) {
+  const d = Math.hypot(tx - u.x, ty - u.y);
+  if (d < .15) return false;
+  const steps = Math.ceil(d / .35);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    if (blockedAt(u.x + (tx - u.x) * t, u.y + (ty - u.y) * t, u)) return true;
+  }
+  return false;
+}
+// 网格 A*：绕开建筑与水面。失败返回 null，调用方回退到直线移动。
+function findPath(sx, sy, tx, ty, r) {
+  const W = MAP, N = W * W;
+  const blocked = new Uint8Array(N);
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) if (walkBlocked(x, y, r)) blocked[y * W + x] = 1;
+  }
+  const svx = clamp(Math.floor(sx), 0, W - 1), svy = clamp(Math.floor(sy), 0, W - 1);
+  const s = svy * W + svx;
+  let gx = clamp(Math.floor(tx), 0, W - 1), gy = clamp(Math.floor(ty), 0, W - 1);
+  if (blocked[gy * W + gx]) {
+    let best = -1, bd = Infinity;
+    for (let y = 0; y < W; y++) {
+      for (let x = 0; x < W; x++) {
+        if (blocked[y * W + x]) continue;
+        const dd = Math.hypot(x - gx, y - gy);
+        if (dd < bd) { bd = dd; best = y * W + x; }
+      }
+    }
+    if (best < 0) return null;
+    gx = best % W; gy = (best / W) | 0;
+  }
+  const goal = gy * W + gx;
+  if (s === goal) return [{ x: tx, y: ty }];
+
+  const gScore = new Float32Array(N).fill(Infinity);
+  const from = new Int32Array(N).fill(-1);
+  const closed = new Uint8Array(N);
+  const open = [];
+  const push = (i, fv) => {
+    open.push([fv, i]);
+    let k = open.length - 1;
+    while (k > 0) {
+      const p = (k - 1) >> 1;
+      if (open[p][0] <= open[k][0]) break;
+      const t = open[p]; open[p] = open[k]; open[k] = t; k = p;
+    }
+  };
+  const pop = () => {
+    const top = open[0], last = open.pop();
+    if (open.length) {
+      open[0] = last;
+      let k = 0;
+      for (;;) {
+        const l = k * 2 + 1, rr = l + 1;
+        let m = k;
+        if (l < open.length && open[l][0] < open[m][0]) m = l;
+        if (rr < open.length && open[rr][0] < open[m][0]) m = rr;
+        if (m === k) break;
+        const t = open[m]; open[m] = open[k]; open[k] = t; k = m;
+      }
+    }
+    return top[1];
+  };
+  gScore[s] = 0;
+  push(s, 0);
+  let iter = 0;
+  while (open.length && iter < 4000) {
+    iter++;
+    const cur = pop();
+    if (cur === goal) break;
+    if (closed[cur]) continue;
+    closed[cur] = 1;
+    const cx = cur % W, cy = (cur / W) | 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= W) continue;
+        const ni = ny * W + nx;
+        if (blocked[ni] || closed[ni]) continue;
+        if (dx && dy && (blocked[cy * W + nx] || blocked[ny * W + cx])) continue;
+        const ng = gScore[cur] + (dx && dy ? 1.4142 : 1);
+        if (ng < gScore[ni]) {
+          gScore[ni] = ng;
+          from[ni] = cur;
+          push(ni, ng + Math.hypot(nx - gx, ny - gy));
+        }
+      }
+    }
+  }
+  if (from[goal] < 0) return null;
+  const pts = [];
+  let n = goal, guard = 0;
+  while (n !== s && n >= 0 && guard++ < 4000) {
+    pts.push({ x: (n % W) + .5, y: ((n / W) | 0) + .5 });
+    n = from[n];
+  }
+  if (!pts.length) return [{ x: tx, y: ty }];
+  pts.reverse();
+  // 拉直：能直视的中间点全部跳过
+  const out = [];
+  let curX = sx, curY = sy, i = 0;
+  while (i < pts.length - 1) {
+    let k = pts.length - 1;
+    while (k > i && segBlocked(curX, curY, pts[k].x, pts[k].y, r)) k--;
+    out.push(pts[k]);
+    curX = pts[k].x; curY = pts[k].y;
+    if (k >= pts.length - 1) break;
+    i = k + 1;
+  }
+  if (!out.length) out.push(pts[pts.length - 1]);
+  out[out.length - 1] = { x: tx, y: ty };
+  return out;
+}
 function separateUnits() {
   const list = S.units.filter(u => u.hp > 0 && !u.garrisoned && u.type !== 'baseVehicle');
   for (let i = 0; i < list.length; i++) {
@@ -1453,23 +1594,52 @@ function separateUnits() {
   }
 }
 function moveTowards(u, tx, ty, dt, stop = 0) {
-  const dx = tx - u.x, dy = ty - u.y, d = Math.hypot(dx, dy);
-  if (d <= stop + .04) { u.moving = false; return true; }
+  if (!u.pathGoal || Math.hypot(tx - u.pathGoal.x, ty - u.pathGoal.y) > 1.2) {
+    u.path = null; u.pathGoal = null; u.pathRepath = 0; u.stuck = 0;
+  }
+  let gx = tx, gy = ty;
+  if (u.path && u.path.length) {
+    while (u.path.length > 1 && Math.hypot(u.x - u.path[0].x, u.y - u.path[0].y) < .5) u.path.shift();
+    gx = u.path[0].x; gy = u.path[0].y;
+  } else if (!u.path && lineBlocked(u, tx, ty)) {
+    const p = findPath(u.x, u.y, tx, ty, unitRadius(u));
+    if (p && p.length) {
+      u.path = p; u.pathGoal = { x: tx, y: ty };
+      gx = p[0].x; gy = p[0].y;
+    }
+  }
+  const dx = gx - u.x, dy = gy - u.y, d = Math.hypot(dx, dy);
   const terr = terrainAt(u.x, u.y);
   const terrainSpeed = terr === 'marsh' ? .62 : terr === 'road' ? 1.25 : 1;
-  const step = Math.min(d - stop, U[u.type].speed * terrainSpeed * (u.slowT > 0 ? .55 : 1) * (u.team === ENEMY ? (S.enemyMods?.speed || 1) : (u.team === PLAYER ? techSpeedMul(u) : 1)) * dt);
-  if (step <= 0) { u.moving = false; return true; }
-  const nx = u.x + dx / d * step, ny = u.y + dy / d * step;
+  const step = d > .0001 ? Math.min(d, U[u.type].speed * terrainSpeed * (u.slowT > 0 ? .55 : 1)
+    * (u.team === ENEMY ? (S.enemyMods?.speed || 1) : (u.team === PLAYER ? techSpeedMul(u) : 1)) * dt) : 0;
   let moved = false;
-  if (!blockedAt(nx, ny, u)) { u.x = nx; u.y = ny; moved = true; }
-  else if (!blockedAt(nx, u.y, u)) { u.x = nx; moved = true; }
-  else if (!blockedAt(u.x, ny, u)) { u.y = ny; moved = true; }
-  if (!moved) { u.moving = false; return false; }
-  const sx = dx - dy;
-  if (Math.abs(sx) > .01) u.facing = sx >= 0 ? 1 : -1;
-  u.moving = true;
-  u.x = clamp(u.x, .3, MAP - .3); u.y = clamp(u.y, .3, MAP - .3);
-  return d - step <= stop + .04;
+  if (step > .0001) {
+    const nx = u.x + dx / d * step, ny = u.y + dy / d * step;
+    if (!blockedAt(nx, ny, u)) { u.x = nx; u.y = ny; moved = true; }
+    else if (!blockedAt(nx, u.y, u)) { u.x = nx; moved = true; }
+    else if (!blockedAt(u.x, ny, u)) { u.y = ny; moved = true; }
+  }
+  if (!moved) {
+    u.stuck = (u.stuck || 0) + 1;
+    if (u.stuck > 2 && (u.pathRepath || 0) < 6) {
+      u.path = null; u.pathGoal = null;
+      u.pathRepath = (u.pathRepath || 0) + 1;
+      u.stuck = 0;
+    }
+  } else {
+    u.stuck = 0;
+    if (Math.abs(dx - dy) > .01) u.facing = (dx - dy) >= 0 ? 1 : -1;
+  }
+  u.x = clamp(u.x, .3, MAP - .3);
+  u.y = clamp(u.y, .3, MAP - .3);
+  u.moving = moved;
+  if (u.path && u.path.length === 1 && Math.hypot(u.x - u.path[0].x, u.y - u.path[0].y) < .45) u.path = null;
+  if (Math.hypot(tx - u.x, ty - u.y) <= Math.max(stop, .05) + .05) {
+    u.path = null; u.pathGoal = null; u.moving = false;
+    return true;
+  }
+  return false;
 }
 function approachPoint(u, target, pad = .8) {
   if (target.kind === 'building') {
@@ -1975,6 +2145,11 @@ function tryTrain(type, n = 1) {
   if (!line) return 0;
   const pro = producerFor(type);
   if (!pro) { toast(`需要先建造${B[cat].name}`, 'warn', 'castle'); Sound.play('ui'); return 0; }
+  if (def.req && !playerHasBuilding(def.req)) {
+    toast(`需要先建成「${B[def.req].name}」才能受封英雄`, 'warn', 'castle');
+    Sound.play('ui');
+    return 0;
+  }
   const cap = 12;
   let added = 0;
   for (let i = 0; i < n; i++) {
@@ -2034,21 +2209,61 @@ function updateTraining(dt) {
 }
 
 /* ------------- building placement ------------- */
-function startPlacement(type) {
+function queueBuilding(type) {
   if (S.mode !== 'playing' || S.paused) return;
+  const q = S.buildQ;
+  if (q.cur && q.cur.ready && q.cur.type === type) { startPlacement(type); return; }
   if (!playerHasKeep()) {
     toast('请先展开基地车，建立主堡后才能建造建筑', 'warn', 'workshop');
     Sound.play('ui');
     return;
   }
-  if (B[type] && !buildingTierUnlocked(type)) {
+  if (!buildingTierUnlocked(type)) {
     const req = tierRequirement(type);
     toast(`需要先建造 T${buildingTier(type) - 1}「${B[req].name}」`, 'warn', 'wall');
     Sound.play('ui');
     return;
   }
+  if (q.queue.length + (q.cur ? 1 : 0) >= 9) { toast('建造队列已满，等前面几座完工', 'warn', 'wall'); Sound.play('ui'); return; }
   const def = B[type];
   if (S.gold < def.cost) { toast('金币不足', 'warn', 'coin'); Sound.play('ui'); return; }
+  S.gold -= def.cost;
+  const item = { type, elapsed: 0, total: BUILD_TIME[type] || 4, ready: false };
+  if (!q.cur) q.cur = item; else q.queue.push(item);
+  toast(`${def.name}进入建造队列 · ${item.total} 秒`, '', 'wall');
+  Sound.play('buildStart');
+  updateHud(true); renderQueue(); updateCards();
+}
+function updateConstruction(dt) {
+  const q = S.buildQ;
+  if (!q || !q.cur || q.cur.ready) return;
+  q.cur.elapsed += dt;
+  if (q.cur.elapsed < q.cur.total) return;
+  q.cur.elapsed = q.cur.total;
+  q.cur.ready = true;
+  toast(`${B[q.cur.type].name}建造完成 · 点击卡片放置`, '', 'castle');
+  Sound.play('buildPlace');
+  renderQueue(); updateCards();
+}
+function startPlacement(type) {
+  if (S.mode !== 'playing' || S.paused) return;
+  const q = S.buildQ.cur;
+  if (!q || q.type !== type || !q.ready) {
+    toast('该建筑尚未就绪：先排队，等施工完成后再点卡片放置', 'warn', 'wall');
+    Sound.play('ui');
+    return;
+  }
+  if (!playerHasKeep()) {
+    toast('请先展开基地车，建立主堡后才能建造建筑', 'warn', 'workshop');
+    Sound.play('ui');
+    return;
+  }
+  if (!buildingTierUnlocked(type)) {
+    const req = tierRequirement(type);
+    toast(`需要先建造 T${buildingTier(type) - 1}「${B[req].name}」`, 'warn', 'wall');
+    Sound.play('ui');
+    return;
+  }
   S.placing = { type, tx: 0, ty: 0, valid: false };
   hideTooltip();
   $('#placement-hint').hidden = false;
@@ -2095,20 +2310,19 @@ function placeBuilding() {
     return;
   }
   const def = B[type];
-  if (S.gold < def.cost) { toast('金币不足', 'warn', 'coin'); cancelPlacement(); return; }
-  S.gold -= def.cost;
   S.trees = S.trees.filter(t => !(t.x > tx - .8 && t.x < tx + def.w + .8 && t.y > ty - .8 && t.y < ty + def.d + .8));
   S.props = S.props.filter(p => !(p.x > tx - .8 && p.x < tx + def.w + .8 && p.y > ty - .8 && p.y < ty + def.d + .8));
   const b = addBuilding(type, tx, ty, PLAYER);
-  b.constructed = false;
-  b.progress = 0;
-  b.hp = Math.max(1, Math.round(b.maxHp * .15));
+  b.constructed = true;
+  b.progress = 1;
   burst(b.x, b.y, 'dust', 16);
-  Sound.play('buildStart');
-  floatText(b.x, b.y, `建造 ${def.name}`, '#e8cf94');
-  toast(`${def.name}开始建造 · ${BUILD_TIME[type] || 4} 秒`, '', 'wall');
+  Sound.play('buildPlace');
+  floatText(b.x, b.y, `${def.name}落成`, '#e8cf94');
+  toast(`${def.name}建造完成`, '', 'castle');
   cancelPlacement(true);
-  updateHud(true); updateCards();
+  if (S.buildQ.cur) S.buildQ.cur = null;
+  if (S.buildQ.queue.length) S.buildQ.cur = S.buildQ.queue.shift();
+  updateHud(true); updateCards(); renderQueue();
 }
 function deployBaseVehicle(u) {
   if (!u || u.type !== 'baseVehicle' || u.team !== PLAYER || u.hp <= 0 || u.garrisoned) return;
@@ -2508,6 +2722,7 @@ function update(dt) {
   separateUnits();
   for (const u of S.units) pushOutOfBuildings(u);
   updateTraining(dt);
+  updateConstruction(dt);
   Sound.ambient(dt);
   updateHud();
   if (S.time - (S.lastQueue || 0) > .15) {
@@ -3742,11 +3957,15 @@ function updateCards() {
       unavailable = !!S.tech[key] || S.gold < t.cost || !!(t.req && !S.tech[t.req]) || noTechBuilding || otherSuper;
       btn.classList.toggle('researched', !!S.tech[key]);
     } else if (B[key]) {
-      unavailable = S.gold < B[key].cost || !buildingTierUnlocked(key);
+      const q = S.buildQ;
+      const isReady = !!(q && q.cur && q.cur.ready && q.cur.type === key);
+      unavailable = !isReady && (S.gold < B[key].cost || !buildingTierUnlocked(key));
+      btn.classList.toggle('ready', isReady);
       btn.classList.toggle('active', !!(S.placing && S.placing.type === key));
     } else {
       const pro = producerFor(key);
       unavailable = !pro || S.gold < U[key].cost || popUsed() + U[key].pop > popCap();
+      if (U[key].req && !playerHasBuilding(U[key].req)) unavailable = true;
       if (U[key].hero && (heroAlive() || heroInProduction())) unavailable = true;
     }
     btn.classList.toggle('unavailable', unavailable && !btn.classList.contains('active'));
@@ -3781,6 +4000,8 @@ function showTooltip(key, btn) {
   }
   const cost = def.cost;
   const req = c.type === 'unit' && !producerFor(key) ? `需要${B[U[key].producer].name}` : '';
+  const heroReq = c.type === 'unit' && U[key].req && !playerHasBuilding(U[key].req) ? `需要先建成「${B[U[key].req].name}」（T3）` : '';
+  const buildHint = c.type === 'building' ? '点击加入建造队列，完成后点击卡片放置' : '';
   const tierReq = c.type === 'building' && !buildingTierUnlocked(key)
     ? `需要先建造 T${buildingTier(key) - 1}「${B[tierRequirement(key)].name}」` : '';
   const tierLabel = c.type === 'building' ? `T${buildingTier(key)} 建筑` : def.role;
@@ -3790,6 +4011,8 @@ function showTooltip(key, btn) {
     <div class="tt-cost"><span class="${S.gold < cost ? 'lack' : ''}">◈ ${cost} 金币</span>${c.type === 'unit' ? `<span>训练 ${def.time}s</span>` : ''}</div>
     ${req ? `<div class="tt-warn">● ${req}</div>` : ''}
     ${tierReq ? `<div class="tt-warn">● ${tierReq}</div>` : ''}
+    ${heroReq ? `<div class="tt-warn">● ${heroReq}</div>` : ''}
+    ${buildHint ? `<div class="tt-sub" style="margin-top:6px">${buildHint}</div>` : ''}
     <div class="tt-hotkey">快捷键 ${hotkey}</div>`;
   els.tip.hidden = false;
   const r = btn.getBoundingClientRect();
@@ -3803,7 +4026,7 @@ function onCard(key, ev) {
   if (S.mode !== 'playing' || S.paused) return;
   if (TECH[key]) { researchTech(key); return; }
   if (!isUnlocked(key)) { toast('该军备尚未解锁，通关章节后获得', 'warn', 'scroll'); Sound.play('ui'); return; }
-  if (B[key]) startPlacement(key);
+  if (B[key]) queueBuilding(key);
   else tryTrain(key, ev && ev.shiftKey ? 5 : 1);
 }
 function researchTech(key) {
@@ -3909,6 +4132,12 @@ function renderQueue() {
     const sp = trainingSpeedFor(cat);
     const q = line.queue.length;
     rows.push(`<div class="queue-line"><span class="queue-label">${labels[cat]} · ${U[line.cur.type].name}${q ? ` +${q}` : ''}${sp > 1 ? ` · ×${sp.toFixed(1)}` : ''}</span><div class="queue-pip"><i style="width:${pct}%"></i></div><span class="queue-pct">${Math.floor(pct)}%</span></div>`);
+  }
+  const bq = S.buildQ && S.buildQ.cur;
+  if (bq) {
+    const pct = clamp(bq.elapsed / bq.total, 0, 1) * 100;
+    const more = S.buildQ.queue.length;
+    rows.unshift(`<div class="queue-line"><span class="queue-label">建造 · ${B[bq.type].name}${bq.ready ? ' · 就绪' : ''}${more ? ` +${more}` : ''}</span><div class="queue-pip"><i style="width:${pct}%"></i></div><span class="queue-pct">${bq.ready ? '就绪' : Math.floor(pct) + '%'}</span></div>`);
   }
   els.queue.innerHTML = rows.length ? rows.join('') : `<div class="queue-line"><span class="queue-label">产线空闲</span></div>`;
 }
@@ -4490,7 +4719,7 @@ function bindUI() {
   window.addEventListener('resize', resize);
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', e => { S.keys[e.key.toLowerCase()] = false; });
-  window.addEventListener('blur', () => { S.keys = {}; });
+  window.addEventListener('blur', () => { S.keys = {}; S.mouse.inside = false; });
 }
 function onPointerDown(e) {
   if (S.mode !== 'playing' || S.paused) return;
@@ -4902,7 +5131,20 @@ if (params.get('debug') === '1') {
         barracks: (S.prod.barracks.cur ? S.prod.barracks.cur.type : '-') + '/' + S.prod.barracks.queue.length,
         workshop: (S.prod.workshop.cur ? S.prod.workshop.cur.type : '-') + '/' + S.prod.workshop.queue.length
       },
-      edgeDelta: window.__edgeDelta || 0
+      edgeDelta: window.__edgeDelta || 0,
+      buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
+      playerBuildings: S.buildings.filter(b => b.team === PLAYER && b.constructed !== false).length,
+      heroes: S.units.filter(u => u.type === 'hero').length,
+      moveDist: (() => {
+        if (!window.__moveGoal) return -1;
+        let best = 999;
+        for (const u of S.units) {
+          if (u.team !== PLAYER || u.garrisoned) continue;
+          const d = Math.hypot(u.x - window.__moveGoal.x, u.y - window.__moveGoal.y);
+          if (d < best) best = d;
+        }
+        return Math.round(best * 10) / 10;
+      })()
     });
   };
   window.__dbgUpdate();
@@ -4918,12 +5160,28 @@ if (params.get('ally') === '1') {
 if (params.has('autostart')) {
   startGame();
 }
+// 调试用：?build=house:3 直接排入建筑队列，?move=x,y 让全部我方单位前往该点。
+const buildSpec = params.get('build');
+if (buildSpec && S.mode === 'playing') {
+  for (const part of buildSpec.split(',')) {
+    const bits = part.split(':');
+    if (B[bits[0]]) { const n = parseInt(bits[1] || '1', 10); for (let i = 0; i < n; i++) queueBuilding(bits[0]); }
+  }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const moveSpec = params.get('move');
+if (moveSpec && S.mode === 'playing') {
+  const bits = moveSpec.split(',').map(Number);
+  for (const u of S.units.filter(x => x.team === PLAYER && x.hp > 0)) orderMove(u, bits[0], bits[1]);
+  window.__moveGoal = { x: bits[0], y: bits[1] };
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
 // 调试用：?warp=秒数 直接把模拟推进若干秒，便于无头测试检查奖励箱、波次等随时间发生的行为。
 const edgeTest = params.get('edgepan');
 if (edgeTest && S.mode === 'playing') {
   const x0 = S.cam.x;
   S.mouse.inside = true;
-  S.mouse.x = edgeTest === 'far' ? VW - 100 : (VW - sidebarWidth() - 12);
+  S.mouse.x = edgeTest === 'far' ? VW - 100 : (panBounds().right - 4);
   S.mouse.y = VH / 2;
   for (let i = 0; i < 30; i++) updateCamera(1 / 30);
   window.__edgeDelta = Math.round(S.cam.x - x0);
@@ -4964,6 +5222,21 @@ const warpSec = parseFloat(params.get('warp') || '0');
 if (Number.isFinite(warpSec) && warpSec > 0 && S.mode === 'playing') {
   const steps = Math.min(4000, Math.round(warpSec * 20));
   for (let i = 0; i < steps; i++) update(1 / 20);
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+// 调试用：?place=1 把已就绪的建筑直接放到主堡旁（在 warp 之后执行），验证「就绪→放置」流程。
+const placeSpec = params.get('place');
+if (placeSpec && S.mode === 'playing' && S.buildQ.cur && S.buildQ.cur.ready) {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  const spot = findKeepSpot((keep ? keep.x : 9) + 4, (keep ? keep.y : 34) + 4);
+  if (spot) {
+    startPlacement(S.buildQ.cur.type);
+    if (S.placing) {
+      S.placing.tx = spot.tx; S.placing.ty = spot.ty;
+      S.placing.valid = canPlace(S.buildQ.cur.type, spot.tx, spot.ty);
+      if (S.placing.valid) placeBuilding();
+    }
+  }
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 if (params.has('t')) {

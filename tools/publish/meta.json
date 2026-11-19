@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "铁与王冠 v1.1.2：多条产线队列、章节结算、私有测试",
-  "releaseName": "铁与王冠 v1.1.2 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.1.2 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.1.2 改动\n\n- **多条产线队列**：兵营 / 车厂 / 主堡各自独立排队，可混排不同兵种、可重复；Shift+点击一次排 5 个\n- **章节结算画面**：每章胜负都有结算（用时、歼灭、损失、采集、S–D 评价）\n- **主线固定资金**：战役起始 1200 金币，主界面不提供调整入口\n- **网页版转私有**：关闭 GitHub Pages，本地用 `start-test.cmd` 测试（仅 127.0.0.1）\n\n### 既有内容\n\n- 五章剧情战役、遭遇战（自定义金钱/步兵/超武）、奖励箱\n- 鼠标贴边平移、13 种部队、17 种建筑、8 项科技、3 种超级武器\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "铁与王冠 v1.1.3：寻路、贴边重做、英雄门槛、单一建造",
+  "releaseName": "铁与王冠 v1.1.3 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.1.3 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.1.3 改动\n\n- **单位寻路**：网格 A* 绕开建筑与水面，不再被建筑卡住\n- **贴边平移重做**：按红警手感（真实边界 / 越贴越快 / 面板上不滚 / 失焦即停）\n- **英雄需 T3**：狮心英雄要建成大教堂才能受封\n- **建筑单一建造**：点卡片排队 → 就绪 → 再点卡片放置，一次只造一座\n\n### 既有内容\n\n- 五章剧情战役、遭遇战、奖励箱、多条产线队列、章节结算画面\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
