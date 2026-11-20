@@ -635,6 +635,19 @@ function scalePlayerHp(mul, filter) {
     u.hp = Math.min(u.maxHp, u.hp + (u.maxHp - before));
   }
 }
+function syncStartUI() {
+  const mode = S.run === 'skirmish' ? 'skirmish' : 'campaign';
+  $$('#mode-tabs .mode-tab').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  const cfg = $('#skirmish-config');
+  if (cfg) cfg.hidden = mode !== 'skirmish';
+  if (S.skirmish) {
+    $$('#sk-gold button').forEach(b => b.classList.toggle('active', +b.dataset.gold === S.skirmish.gold));
+    $$('#sk-inf button').forEach(b => b.classList.toggle('active', +b.dataset.inf === S.skirmish.inf));
+    const t = $('#sk-super');
+    if (t) t.classList.toggle('active', !!S.skirmish.supers);
+  }
+  updateCampaignUI();
+}
 function updateCampaignUI() {
   if (S.run === 'skirmish') {
     const theme = (MAP_THEMES[S.mapTheme] || MAP_THEMES.border).name;
@@ -999,7 +1012,7 @@ function resetWorld() {
   S.enemyMods = { ...L.mods };
   S.wave = { n: 0, timer: Math.max(30, DIFFS[S.diffKey].first + L.firstAdd) };
   S.enemy = { nextTrain: 12, tacticTimer: 0, baseVehicleTimer: 18, attackTimer: 40, buildRetry: 0 };
-  S.enemySuper = S.supersEnabled ? {
+  S.enemySuper = (S.run === 'skirmish' && S.supersEnabled) ? {
     key: ['fire', 'storm', 'plague'][Math.floor(Math.random() * 3)],
     timer: 90, built: false
   } : null;
@@ -2234,6 +2247,30 @@ function queueBuilding(type) {
   Sound.play('buildStart');
   updateHud(true); renderQueue(); updateCards();
 }
+function cancelBuild(type) {
+  if (S.mode !== 'playing' || S.paused) return false;
+  const q = S.buildQ;
+  if (!q || !B[type]) return false;
+  const cost = B[type].cost;
+  if (q.cur && q.cur.type === type) {
+    S.gold += cost;
+    q.cur = q.queue.length ? q.queue.shift() : null;
+    toast(`${B[type].name}已取消建造，退回 ${cost} 金币`, '', 'coin');
+    Sound.play('ui');
+    updateHud(true); renderQueue(); updateCards();
+    return true;
+  }
+  const idx = q.queue.findIndex(it => it.type === type);
+  if (idx >= 0) {
+    S.gold += cost;
+    q.queue.splice(idx, 1);
+    toast(`${B[type].name}已移出建造队列，退回 ${cost} 金币`, '', 'coin');
+    Sound.play('ui');
+    updateHud(true); renderQueue(); updateCards();
+    return true;
+  }
+  return false;
+}
 function updateConstruction(dt) {
   const q = S.buildQ;
   if (!q || !q.cur || q.cur.ready) return;
@@ -2507,6 +2544,7 @@ function tryBuildEnemyBarracks() {
   return false;
 }
 function tryBuildEnemySuperBuilding() {
+  if (S.run !== 'skirmish') return false;
   if (!S.supersEnabled) return false;
   if (!S.enemySuper || S.enemySuper.built) return false;
   const sup = SUPERS[S.enemySuper.key];
@@ -3940,6 +3978,11 @@ function renderCards() {
   $$('.cmd-card', els.grid).forEach(btn => {
     const key = btn.dataset.key;
     btn.addEventListener('click', (e) => onCard(key, e));
+    btn.addEventListener('contextmenu', (e) => {
+      if (!B[key]) return;
+      e.preventDefault();
+      cancelBuild(key);
+    });
     btn.addEventListener('mouseenter', () => showTooltip(key, btn));
     btn.addEventListener('mouseleave', hideTooltip);
   });
@@ -4064,17 +4107,30 @@ function researchTech(key) {
 }
 function updateSuperUI() {
   const btn = els.superBtn;
-  if (!btn) return;
+  if (btn) btn.hidden = true;
+  const hud = $('#super-hud');
   const sup = selectedSuper();
-  btn.hidden = !sup || !S.supersEnabled;
-  btn.classList.toggle('cooling', S.superCd > 0);
-  btn.classList.toggle('aiming', !!S.superAim);
-  if (!sup) return;
-  const use = btn.querySelector('use');
-  if (use) use.setAttribute('href', `#i-${sup.icon}`);
-  btn.title = S.superCd > 0 ? `${sup.name} · 冷却 ${Math.ceil(S.superCd)} 秒`
-    : `${sup.name} · 点击后左键选择落点`;
-  if (els.superCd) els.superCd.textContent = S.superCd > 0 ? Math.ceil(S.superCd) : (S.superAim ? '选' : '');
+  const show = !!sup && S.supersEnabled;
+  if (!hud) return;
+  hud.hidden = !show;
+  if (!show) return;
+  const cooling = S.superCd > 0;
+  hud.classList.toggle('cooling', cooling);
+  hud.classList.toggle('ready', !cooling);
+  hud.classList.toggle('aiming', !!S.superAim);
+  const useEl = hud.querySelector('use');
+  if (useEl) useEl.setAttribute('href', `#i-${sup.icon}`);
+  const nameEl = hud.querySelector('.sh-name');
+  if (nameEl) nameEl.textContent = sup.name;
+  const valEl = hud.querySelector('.sh-val');
+  if (valEl) valEl.textContent = cooling ? Math.ceil(S.superCd) + 's' : (S.superAim ? '选点' : '就绪');
+  const barEl = hud.querySelector('.sh-bar i');
+  if (barEl) {
+    const total = Math.max(1, sup.cd || 60);
+    barEl.style.width = cooling ? clamp((1 - S.superCd / total) * 100, 0, 100) + '%' : '100%';
+  }
+  const hintEl = hud.querySelector('.sh-hint');
+  if (hintEl) hintEl.textContent = cooling ? '充能中' : (S.superAim ? '左键选点 · 右键取消' : '点击释放');
 }
 function armSuper() {
   if (S.mode !== 'playing' || S.paused) return;
@@ -4676,6 +4732,34 @@ function bindUI() {
     S.allyEnabled = e.currentTarget.classList.contains('active');
     Sound.play('ui');
   });
+  $$('#mode-tabs .mode-tab').forEach(btn => btn.addEventListener('click', () => {
+    S.run = btn.dataset.mode === 'skirmish' ? 'skirmish' : 'campaign';
+    if (S.run === 'skirmish' && !S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
+    if (S.run === 'campaign') S.skirmish = null;
+    syncStartUI();
+    Sound.play('ui');
+  }));
+  $$('#sk-gold button').forEach(btn => btn.addEventListener('click', () => {
+    if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
+    S.skirmish.gold = parseInt(btn.dataset.gold, 10);
+    $$('#sk-gold button').forEach(b => b.classList.toggle('active', b === btn));
+    updateCampaignUI();
+    Sound.play('ui');
+  }));
+  $$('#sk-inf button').forEach(btn => btn.addEventListener('click', () => {
+    if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
+    S.skirmish.inf = parseInt(btn.dataset.inf, 10);
+    $$('#sk-inf button').forEach(b => b.classList.toggle('active', b === btn));
+    updateCampaignUI();
+    Sound.play('ui');
+  }));
+  $('#sk-super')?.addEventListener('click', e => {
+    if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
+    S.skirmish.supers = !S.skirmish.supers;
+    e.currentTarget.classList.toggle('active', S.skirmish.supers);
+    updateCampaignUI();
+    Sound.play('ui');
+  });
   $$('#command-tabs .tab').forEach(tab => tab.addEventListener('click', () => {
     S.tab = tab.dataset.tab; renderTabs(); renderCards(); hideTooltip(); Sound.play('ui');
   }));
@@ -4696,6 +4780,8 @@ function bindUI() {
   $('#btn-pause').addEventListener('click', togglePause);
   $('#btn-resume').addEventListener('click', togglePause);
   if (els.superBtn) els.superBtn.addEventListener('click', armSuper);
+  const superHud = $('#super-hud');
+  if (superHud) superHud.addEventListener('click', armSuper);
   setInterval(updateSuperUI, 250);
   updateSuperUI();
   $('#btn-pause').innerHTML = icon('pause');
@@ -4981,6 +5067,18 @@ function startGame() {
   S.diffKey = $$('.diff-option').find(b => b.classList.contains('active'))?.dataset.diff || S.diffKey;
   const allyToggle = $('#ally-toggle');
   S.allyEnabled = allyToggle ? allyToggle.classList.contains('active') : params.get('ally') === '1';
+  const modeTab = $$('#mode-tabs .mode-tab').find(b => b.classList.contains('active'));
+  S.run = modeTab && modeTab.dataset.mode === 'skirmish' ? 'skirmish' : 'campaign';
+  if (S.run === 'skirmish') {
+    const gb = $$('#sk-gold button').find(b => b.classList.contains('active'));
+    const ib = $$('#sk-inf button').find(b => b.classList.contains('active'));
+    const st = $('#sk-super');
+    S.skirmish = {
+      gold: gb ? parseInt(gb.dataset.gold, 10) : 2000,
+      inf: ib ? parseInt(ib.dataset.inf, 10) : 4,
+      supers: st ? st.classList.contains('active') : true
+    };
+  } else S.skirmish = null;
   updateCampaignUI();
   resetWorld();
   S.mode = 'playing'; S.paused = false;
@@ -5133,6 +5231,14 @@ if (params.get('debug') === '1') {
       },
       edgeDelta: window.__edgeDelta || 0,
       buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
+      enemySuper: !!S.enemySuper,
+      superHud: (() => {
+        const h = document.getElementById('super-hud');
+        if (!h) return 'none';
+        if (h.hidden) return 'hidden';
+        const v = h.querySelector('.sh-val');
+        return v ? v.textContent : 'shown';
+      })(),
       playerBuildings: S.buildings.filter(b => b.team === PLAYER && b.constructed !== false).length,
       heroes: S.units.filter(u => u.type === 'hero').length,
       moveDist: (() => {
@@ -5157,6 +5263,7 @@ if (params.get('ally') === '1') {
   S.allyEnabled = true;
   $('#ally-toggle')?.classList.add('active');
 }
+syncStartUI();
 if (params.has('autostart')) {
   startGame();
 }
@@ -5167,6 +5274,16 @@ if (buildSpec && S.mode === 'playing') {
     const bits = part.split(':');
     if (B[bits[0]]) { const n = parseInt(bits[1] || '1', 10); for (let i = 0; i < n; i++) queueBuilding(bits[0]); }
   }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+// 调试用：?cancel=house 取消建造并退款；?superselect=fire 选中超武并进入冷却，验证右下角面板。
+const cancelSpec = params.get('cancel');
+if (cancelSpec && S.mode === 'playing') { cancelBuild(cancelSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
+const supSelSpec = params.get('superselect');
+if (supSelSpec && SUPERS[supSelSpec]) {
+  S.superKey = supSelSpec;
+  S.superCd = 12;
+  updateSuperUI();
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const moveSpec = params.get('move');

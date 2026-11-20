@@ -188,124 +188,15 @@
         </div>
       </div>
       <div class="actions">
-        <div class="mode-tabs" role="group" aria-label="模式选择">
-          <button class="mode-tab active" data-mode="campaign" type="button"><b>战 役</b><span>五章主线剧情</span></button>
-          <button class="mode-tab" data-mode="skirmish" type="button"><b>遭 遇 战</b><span>人机对打</span></button>
-        </div>
-        <div class="skirmish-config" id="skirmish-config" hidden>
-          <div class="cfg-row"><span>起始金钱</span>
-            <div class="cfg-options" id="gold-options">
-              <button type="button" data-gold="1000">1000</button>
-              <button type="button" data-gold="2000" class="active">2000</button>
-              <button type="button" data-gold="4000">4000</button>
-              <button type="button" data-gold="8000">8000</button>
-            </div>
-          </div>
-          <div class="cfg-row"><span>初始步兵</span>
-            <div class="cfg-options" id="inf-options">
-              <button type="button" data-inf="0">0</button>
-              <button type="button" data-inf="2">2</button>
-              <button type="button" data-inf="4" class="active">4</button>
-              <button type="button" data-inf="6">6</button>
-              <button type="button" data-inf="8">8</button>
-            </div>
-          </div>
-          <button class="cfg-toggle active" id="super-toggle" type="button">
-            <b>超级武器</b><span>天火 · 雷霆 · 瘟疫</span>
-          </button>
-          <p class="cfg-hint">金钱与初始步兵双方相同；关闭超级武器后，双方都无法建造 T3 超武建筑。</p>
-        </div>
-        <div class="difficulty" role="group" aria-label="难度选择">
-          <button class="diff-option" data-diff="squire"><b>侍从</b><span>轻松经营</span></button>
-          <button class="diff-option active" data-diff="knight"><b>骑士</b><span>标准战役</span></button>
-          <button class="diff-option" data-diff="king"><b>国王</b><span>严酷围城</span></button>
-        </div>
-        <button class="ally-option" id="ally-toggle" type="button">
-          <b>青杉盟军 · AI 队友</b><span>自行出兵 / 共享视野</span>
-        </button>
-        <a class="play" id="play" href="game.html?autostart=1&amp;diff=knight">
-          <b>打 开 游 戏</b>
+        <a class="play" id="play" href="index.html">
+          <b>进 入 主 菜 单</b>
           <small>ENTER THE REALM</small>
         </a>
-        <div class="foot">点击后直接进入战场 · 无需安装</div>
+        <div class="foot">模式、难度与遭遇战设置都在游戏主菜单里</div>
       </div>
     </div>
   </main>
 </div>
-<script>
-  (function(){
-    var diff='knight';
-    var ally=false;
-    var mode='campaign';
-    var gold=2000;
-    var inf=4;
-    var sup=true;
-    var play=document.getElementById('play');
-    var allyToggle=document.getElementById('ally-toggle');
-    var options=document.querySelectorAll('.diff-option');
-    var modeTabs=document.querySelectorAll('.mode-tab');
-    var cfg=document.getElementById('skirmish-config');
-    var goldBtns=document.querySelectorAll('#gold-options button');
-    var infBtns=document.querySelectorAll('#inf-options button');
-    var superToggle=document.getElementById('super-toggle');
-    var playLabel=play.querySelector('b');
-    var playSub=play.querySelector('small');
 
-    function updateLink(){
-      if(mode==='skirmish'){
-        play.href='game.html?autostart=1&mode=skirmish&diff='+encodeURIComponent(diff)
-          +'&gold='+gold+'&inf='+inf+'&super='+(sup?1:0)+(ally?'&ally=1':'');
-        playLabel.textContent='进 入 遭 遇 战';
-        playSub.textContent='SKIRMISH';
-      }else{
-        play.href='game.html?autostart=1&diff='+encodeURIComponent(diff)+(ally?'&ally=1':'');
-        playLabel.textContent='打 开 游 戏';
-        playSub.textContent='ENTER THE REALM';
-      }
-    }
-    function applyMode(m){
-      mode=m;
-      modeTabs.forEach(function(b){b.classList.toggle('active',b.dataset.mode===m)});
-      cfg.hidden = m!=='skirmish';
-      updateLink();
-    }
-    options.forEach(function(btn){
-      btn.addEventListener('click',function(){
-        diff=btn.dataset.diff;
-        options.forEach(function(b){b.classList.toggle('active',b===btn)});
-        updateLink();
-      });
-    });
-    allyToggle.addEventListener('click',function(){
-      ally=!ally;
-      allyToggle.classList.toggle('active',ally);
-      updateLink();
-    });
-    modeTabs.forEach(function(tab){
-      tab.addEventListener('click',function(){ applyMode(tab.dataset.mode); });
-    });
-    goldBtns.forEach(function(btn){
-      btn.addEventListener('click',function(){
-        gold=parseInt(btn.dataset.gold,10);
-        goldBtns.forEach(function(b){b.classList.toggle('active',b===btn)});
-        updateLink();
-      });
-    });
-    infBtns.forEach(function(btn){
-      btn.addEventListener('click',function(){
-        inf=parseInt(btn.dataset.inf,10);
-        infBtns.forEach(function(b){b.classList.toggle('active',b===btn)});
-        updateLink();
-      });
-    });
-    superToggle.addEventListener('click',function(){
-      sup=!sup;
-      superToggle.classList.toggle('active',sup);
-      updateLink();
-    });
-    var qMode=new URLSearchParams(location.search).get('mode');
-    applyMode(qMode==='skirmish'?'skirmish':'campaign');
-  })();
-</script>
 </body>
 </html>

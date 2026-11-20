@@ -214,6 +214,16 @@
       </div>
     </aside>
 
+    <div id="super-hud" class="super-hud" hidden>
+      <svg class="sh-icon"><use href="#i-catapult"></use></svg>
+      <div class="sh-body">
+        <span class="sh-name">超级武器</span>
+        <div class="sh-bar"><i style="width:100%"></i></div>
+        <span class="sh-hint">点击释放</span>
+      </div>
+      <span class="sh-val">就绪</span>
+    </div>
+
     <div id="hintbar">
       <span class="hint"><kbd>左键</kbd> 选择 / 移动 / 攻击</span>
       <span class="hint"><kbd>右键</kbd> 攻击移动 / 取消</span>
@@ -252,6 +262,34 @@
           <svg class="title-crest right"><use href="#i-crest"></use></svg>
         </div>
         <p class="start-lore">黑鸦公国的铁蹄踏碎了边境的宁静。<br>采金募兵、修筑箭塔，率领赤蔷薇的军队夺回王座。</p>
+
+        <div class="mode-tabs" id="mode-tabs" role="group" aria-label="模式选择">
+          <button class="mode-tab active" data-mode="campaign" type="button"><b>战 役</b><span>五章主线剧情</span></button>
+          <button class="mode-tab" data-mode="skirmish" type="button"><b>遭 遇 战</b><span>人机对打</span></button>
+        </div>
+        <div class="skirmish-config" id="skirmish-config" hidden>
+          <div class="cfg-row"><span>起始资金</span>
+            <div class="cfg-options" id="sk-gold">
+              <button type="button" data-gold="1000">1000</button>
+              <button type="button" data-gold="2000" class="active">2000</button>
+              <button type="button" data-gold="4000">4000</button>
+              <button type="button" data-gold="8000">8000</button>
+            </div>
+          </div>
+          <div class="cfg-row"><span>初始部队</span>
+            <div class="cfg-options" id="sk-inf">
+              <button type="button" data-inf="0">0</button>
+              <button type="button" data-inf="2">2</button>
+              <button type="button" data-inf="4" class="active">4</button>
+              <button type="button" data-inf="6">6</button>
+              <button type="button" data-inf="8">8</button>
+            </div>
+          </div>
+          <button class="cfg-toggle active" id="sk-super" type="button">
+            <b>超级武器</b><span>天火 · 雷霆 · 瘟疫</span>
+          </button>
+          <p class="cfg-hint">资金与初始部队双方相同；关闭超级武器后双方都无法建造 T3 超武建筑。</p>
+        </div>
 
         <div class="difficulty">
           <button class="diff-option" data-diff="squire"><b>侍从</b><span>轻松经营</span></button>

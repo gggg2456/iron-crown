@@ -483,3 +483,59 @@ body.menu-mode #game-canvas { cursor: default; }
 /* ready-to-place building card */
 .cmd-card.ready { border-color: rgba(240,209,138,.85); box-shadow: 0 0 0 1px rgba(240,209,138,.5), inset 0 0 24px rgba(240,209,138,.16); animation: readyPulse 1.3s ease-in-out infinite; }
 @keyframes readyPulse { 50% { box-shadow: 0 0 0 2px rgba(240,209,138,.9), inset 0 0 30px rgba(240,209,138,.28); } }
+/* ============ SUPER WEAPON HUD (bottom-right) ============ */
+.super-hud {
+  position: absolute; right: 24px; bottom: 76px; z-index: 21;
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border: 1px solid rgba(213,179,110,.42);
+  background: linear-gradient(180deg, rgba(44,33,22,.94), rgba(18,14,9,.96));
+  box-shadow: 0 10px 26px rgba(0,0,0,.55), inset 0 0 24px rgba(0,0,0,.4);
+  cursor: pointer; transition: border-color .2s ease, transform .15s ease;
+}
+.super-hud:hover { border-color: rgba(240,209,138,.78); transform: translateY(-1px); }
+.super-hud .sh-icon { width: 30px; height: 30px; color: #d8b363; flex: none; }
+.super-hud .sh-body { min-width: 128px; }
+.super-hud .sh-name { display: block; font-size: 12px; letter-spacing: .1em; color: #f0d8a4; }
+.super-hud .sh-bar { display: block; height: 3px; margin: 5px 0 4px; background: rgba(213,179,110,.16); }
+.super-hud .sh-bar i { display: block; height: 100%; background: linear-gradient(90deg, #8c2d26, #d19b55); }
+.super-hud .sh-hint { display: block; font-size: 9px; letter-spacing: .06em; color: #9a8258; }
+.super-hud .sh-val { margin-left: 6px; font-family: var(--font-en); font-size: 18px; color: #e8cd94; letter-spacing: .04em; }
+.super-hud.cooling { opacity: .94; }
+.super-hud.ready { border-color: rgba(240,209,138,.82); box-shadow: 0 10px 26px rgba(0,0,0,.55), 0 0 22px rgba(240,209,138,.2); }
+.super-hud.ready .sh-val { color: #ffe6b2; text-shadow: 0 0 14px rgba(255,220,150,.45); }
+.super-hud.aiming { border-color: #ffcf72; }
+
+/* ============ START SCREEN: MODE + SKIRMISH CONFIG ============ */
+.mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: min(430px, 86vw); margin-top: 22px; }
+.mode-tab {
+  cursor: pointer; padding: 9px 6px 8px; border: 1px solid rgba(213,179,110,.2);
+  background: rgba(0,0,0,.32); color: #8f7955; font-family: var(--font-display); transition: .18s ease;
+}
+.mode-tab b { display: block; font-size: 14px; font-weight: 400; letter-spacing: .14em; }
+.mode-tab span { display: block; margin-top: 4px; font-size: 8px; letter-spacing: .06em; color: #6f6048; }
+.mode-tab:hover { border-color: #b4945b; color: #d9c094; }
+.mode-tab.active { border-color: var(--gold); color: #f0dbaa; background: linear-gradient(180deg, rgba(107,77,37,.34), rgba(0,0,0,.28)); }
+.mode-tab.active span { color: #b79b6b; }
+.skirmish-config {
+  display: flex; flex-direction: column; gap: 8px; width: min(430px, 86vw); margin-top: 10px;
+  padding: 10px 12px; border: 1px solid rgba(213,179,110,.18); background: rgba(0,0,0,.26);
+}
+.cfg-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cfg-row > span { font-size: 9px; letter-spacing: .14em; color: #9c8659; }
+.cfg-options { display: flex; gap: 4px; }
+.cfg-options button {
+  cursor: pointer; min-width: 40px; padding: 5px 7px; border: 1px solid rgba(213,179,110,.18);
+  background: rgba(0,0,0,.3); color: #9a8258; font-family: var(--font-en); font-size: 10px; transition: .16s ease;
+}
+.cfg-options button:hover { border-color: rgba(213,179,110,.45); color: #e0c692; }
+.cfg-options button.active { border-color: var(--gold); color: #f2dcaa; background: rgba(107,77,37,.4); }
+.cfg-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px;
+  border: 1px solid rgba(105,179,145,.2); background: rgba(20,44,34,.2); color: #8db29a;
+  font-family: var(--font-display); cursor: pointer; transition: .18s ease; text-align: left;
+}
+.cfg-toggle b { font-size: 11px; font-weight: 400; letter-spacing: .1em; }
+.cfg-toggle span { font-size: 8px; color: #587463; }
+.cfg-toggle.active { border-color: rgba(137,220,178,.5); color: #c9f0da; background: linear-gradient(180deg, rgba(61,126,96,.22), rgba(15,35,26,.2)); }
+.cfg-toggle:not(.active) { border-color: rgba(140,63,54,.35); color: #b08a80; background: rgba(48,20,18,.25); }
+.cfg-hint { margin: 0; font-size: 8px; line-height: 1.6; color: #6f6048; letter-spacing: .03em; }
