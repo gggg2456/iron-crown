@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "铁与王冠 v1.2.1：阵营专属超武锁死（含热键路径）",
-  "releaseName": "铁与王冠 v1.2.1 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.2.1 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.2.1 改动\n\n- **阵营专属超武锁死**：赤蔷薇=天火、青杉=雷霆、黑鸦=瘟疫；科技研究、建筑队列、数字热键三条路径都会拒绝其它阵营的超武\n- 阵营按钮直接标注专属超武名称\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图/自定资金部队）、小超武战鼓台、奖励箱、A* 寻路\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "铁与王冠 v1.2.2：数字键 1–5 切换指令页签",
+  "releaseName": "铁与王冠 v1.2.2 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.2.2 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.2.2 改动\n\n- **数字键 1–5 切换页签**：建造 / 兵种 / 防御 / 攻城 / 科技，与红警侧栏一致\n- 出兵与建造改为 **Shift+数字**（也可直接点击卡片）\n- 编队调整：`Ctrl+数字` 编组、`Ctrl+Shift+数字` 加入、`Alt+数字` 调用\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图）、小超武战鼓台、奖励箱、A* 寻路\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }

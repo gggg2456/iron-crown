@@ -458,6 +458,8 @@ const MAP_THEMES = {
   }
 };
 const TAB_KEYS = { z: 'build', x: 'units', c: 'defense', v: 'siege', b: 'tech' };
+const TAB_ORDER = ['build', 'units', 'defense', 'siege', 'tech'];
+const TAB_LABELS = { build: '建造', units: '兵种', defense: '防御', siege: '攻城', tech: '科技' };
 // The original road network stops near the old center. These outer roads,
 // forests and mines keep the expanded map worth exploring.
 const OUTER_ROADS = [
@@ -5204,9 +5206,10 @@ function onKeyDown(e) {
   if (/^[1-9]$/.test(k) && (e.ctrlKey || e.altKey || e.shiftKey)) {
     e.preventDefault();
     const n = parseInt(k);
-    if (e.ctrlKey) assignControlGroup(n);
+    if (e.ctrlKey && e.shiftKey) assignControlGroup(n, true);
+    else if (e.ctrlKey) assignControlGroup(n);
     else if (e.altKey) recallControlGroup(n);
-    else assignControlGroup(n, true);
+    else if (e.shiftKey) { const key = TABS[S.tab][n - 1]; if (key) onCard(key); }
     return;
   }
   if (e.ctrlKey && k === 'a') {
@@ -5248,9 +5251,14 @@ function onKeyDown(e) {
     return;
   }
   if (k in TAB_KEYS) { S.tab = TAB_KEYS[k]; renderTabs(); renderCards(); return; }
-  if (/^[1-9]$/.test(k)) {
-    const key = TABS[S.tab][parseInt(k) - 1];
-    if (key) onCard(key);
+  if (/^[1-5]$/.test(k)) {
+    const tab = TAB_ORDER[parseInt(k, 10) - 1];
+    if (tab && tab !== S.tab) {
+      S.tab = tab;
+      renderTabs(); renderCards(); hideTooltip();
+      toast('页签：' + TAB_LABELS[tab], '', 'scroll');
+      Sound.play('ui');
+    }
     return;
   }
   if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) {
@@ -5489,6 +5497,8 @@ if (params.get('debug') === '1') {
       edgeDelta: window.__edgeDelta || 0,
       tutorial: S.tutorial, tutStep: S.tutStep, faction: S.faction, miniCd: Math.round(S.miniCd),
       superKey: S.superKey,
+      tab: S.tab,
+      keyLog: window.__keyLog || [],
       buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
       enemySuper: !!S.enemySuper,
       superHud: (() => {
@@ -5595,6 +5605,17 @@ if (trainSpec && S.mode === 'playing') {
 if (cancelUnitSpec && S.mode === 'playing') { cancelTrain(cancelUnitSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
 const researchSpec = params.get('research');
 if (researchSpec && S.mode === 'playing') { researchTech(researchSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
+const keysSpec = params.get('keys');
+if (keysSpec === '1' && S.mode === 'playing') {
+  window.__keyLog = [];
+  const fireKey = (key, opts) => {
+    window.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ key, bubbles: true }, opts || {})));
+    window.__keyLog.push(S.tab);
+  };
+  for (const kk of ['1', '2', '3', '4', '5']) fireKey(kk);
+  fireKey('3', { shiftKey: true });
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
 if (castMiniSpec && S.mode === 'playing') {
   const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
   if (keep) applyMiniAt(keep.x, keep.y + 2);
