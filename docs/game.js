@@ -106,6 +106,11 @@ const B = {
     name: '瘟疫之井', enemyName: '黑鸦瘟疫之井', w: 2, d: 2, hp: 760, h: 86, icon: 'store',
     cost: 320, superBuilding: 'plague',
     desc: 'T3 超武建筑。建成后才能选择「瘟疫之息」。'
+  },
+  drumTower: {
+    name: '战鼓台', enemyName: '黑鸦战鼓台', w: 2, d: 2, hp: 700, h: 88, icon: 'flag',
+    cost: 260, mini: true, miniRadius: 5.5, miniCd: 45,
+    desc: '小超武建筑：每 45 秒可敲响战鼓，范围内友军 +30% 移速 / +20% 伤害，敌军 −30% 移速 / −20% 伤害，持续 12 秒。'
   }
 };
 
@@ -187,12 +192,27 @@ const U = {
     name: '黑鸦巫师', enemyName: '黑鸦巫师', hp: 115, speed: 1.9, dmg: 12, range: 5.2,
     cd: 1.5, aggro: 6, pop: 1, cost: 0, time: 1, h: 28, producer: 'barracks', icon: 'scroll',
     role: '施法单位', desc: '投掷腐蚀魔弹，并持续治疗周围的黑鸦部队。'
+  },
+  dog: {
+    name: '猎犬', enemyName: '黑鸦猎犬', hp: 45, speed: 3.5, dmg: 4, range: .9,
+    cd: 1.2, aggro: 0, pop: 0, cost: 25, time: 2, h: 16, producer: 'barracks', icon: 'peasant',
+    role: '侦察单位', desc: '跑得最快、视野最远（10 格），不主动交战。便宜，用来探路和开视野。'
+  },
+  lancer: {
+    name: '枪骑兵', enemyName: '黑鸦枪骑兵', hp: 190, speed: 3.0, dmg: 18, range: 1.2,
+    cd: 1.05, aggro: 6.2, pop: 2, cost: 120, time: 7, h: 34, producer: 'barracks', icon: 'knight',
+    role: '轻装骑兵', desc: '比重装骑士便宜，冲锋快，专门追杀弓手与农民。'
+  },
+  javelineer: {
+    name: '掷矛手', enemyName: '黑鸦掷矛手', hp: 70, speed: 2.2, dmg: 9, range: 3.6,
+    cd: 1.5, aggro: 5.5, pop: 1, cost: 55, time: 3, h: 24, producer: 'barracks', icon: 'archer',
+    role: '廉价远程', desc: '射程短、伤害低，但开局面便宜好用，适合前期骚扰。'
   }
 };
 
 const TABS = {
-  build: ['house', 'barracks', 'market', 'mill', 'armory', 'workshop', 'forge', 'cathedral', 'sunAltar', 'stormSpire', 'plagueWell'],
-  units: ['peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'halberdier', 'priest'],
+  build: ['house', 'barracks', 'market', 'mill', 'armory', 'workshop', 'forge', 'cathedral', 'sunAltar', 'stormSpire', 'plagueWell', 'drumTower'],
+  units: ['peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'halberdier', 'priest', 'dog', 'lancer', 'javelineer'],
   siege: ['ram', 'catapult', 'scorpion', 'baseVehicle'],
   defense: ['tower', 'watchtower', 'wall', 'fountain', 'ballista', 'super_fire', 'super_storm', 'super_plague'],
   tech: ['logistics', 'drill', 'steel', 'plate', 'royal', 'strategy_banner', 'strategy_march', 'strategy_siege']
@@ -200,7 +220,7 @@ const TABS = {
 const BUILD_TIER = {
   house: 1, barracks: 1, tower: 1, wall: 1, fountain: 1, market: 1, mill: 1,
   armory: 2, workshop: 2, ballista: 2, forge: 2, watchtower: 2,
-  cathedral: 3, sunAltar: 3, stormSpire: 3, plagueWell: 3
+  cathedral: 3, sunAltar: 3, stormSpire: 3, plagueWell: 3, drumTower: 2
 };
 const TIER_REQ = { 2: 'barracks', 3: 'workshop' };
 const SUPERS = {
@@ -220,6 +240,21 @@ const SUPERS = {
     desc: '释放大范围毒雾，伤害较弱，但会让敌军大幅减速。'
   }
 };
+// 遭遇战三阵营：每个阵营只拥有一种超级武器。
+const FACTIONS = {
+  rose:  { name: '赤蔷薇', super: 'fire',   tag: '王座正统' },
+  pine:  { name: '青杉',   super: 'storm',  tag: '山林盟约' },
+  raven: { name: '黑鸦',   super: 'plague', tag: '铁鸦军团' }
+};
+function factionOf() { return FACTIONS[S.faction] || FACTIONS.rose; }
+function factionSuperOf(key) {
+  if (TECH[key] && TECH[key].isSuper) return TECH[key].superKey;
+  const found = Object.keys(SUPERS).find(k => SUPERS[k].building === key);
+  return found || null;
+}
+function factionSuperMatch(key) {
+  return factionSuperOf(key) === factionOf().super;
+}
 const TECH = {
   logistics: { tier: 'T1', name: '后勤学', cost: 240, icon: 'coin', building: 'mill', desc: '农民每次运回的金币 +20%。需要先建造「磨坊」。', req: null },
   drill: { tier: 'T1', name: '征兵令', cost: 280, icon: 'flag', building: 'barracks', desc: '全军训练速度 +15%。需要先建造「兵营」。', req: null },
@@ -238,21 +273,22 @@ const RANKS = ['', '新兵', '老兵', '精锐'];
 const BUILD_TIME = {
   keep: 10, house: 3.5, barracks: 5, workshop: 8, market: 5, cathedral: 12,
   armory: 6, tower: 4, wall: 1.5, fountain: 5, ballista: 6, watchtower: 6.5,
-  mill: 4, forge: 7, sunAltar: 16, stormSpire: 14, plagueWell: 15
+  mill: 4, forge: 7, sunAltar: 16, stormSpire: 14, plagueWell: 15, drumTower: 8
 };
 const BUILD_RADIUS = 9.5;
 const VISION_U = {
   peasant: 6, spearman: 6.5, swordsman: 6.5, crossbowman: 7.5, archer: 8,
   knight: 8.5, hero: 9.5, halberdier: 6.5, priest: 7, ram: 7,
-  catapult: 8.5, scorpion: 7.5, baseVehicle: 7.5, assassin: 7, shaman: 7
+  catapult: 8.5, scorpion: 7.5, baseVehicle: 7.5, assassin: 7, shaman: 7,
+  dog: 10, lancer: 8.5, javelineer: 6.5
 };
 const VISION_B = {
   keep: 12, house: 7, barracks: 8, workshop: 8, market: 8, cathedral: 11,
   armory: 7, fountain: 6, tower: 10, wall: 2, ballista: 10, watchtower: 16,
-  mill: 7, forge: 8, sunAltar: 9, stormSpire: 10, plagueWell: 9
+  mill: 7, forge: 8, sunAltar: 9, stormSpire: 10, plagueWell: 9, drumTower: 9
 };
 
-const BASE_UNLOCKED = ['house', 'barracks', 'workshop', 'market', 'cathedral', 'tower', 'wall', 'fountain', 'peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'ram', 'catapult', 'scorpion', 'baseVehicle', 'mill', 'forge', 'sunAltar', 'stormSpire', 'plagueWell', 'watchtower'];
+const BASE_UNLOCKED = ['house', 'barracks', 'workshop', 'market', 'cathedral', 'tower', 'wall', 'fountain', 'peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'ram', 'catapult', 'scorpion', 'baseVehicle', 'mill', 'forge', 'sunAltar', 'stormSpire', 'plagueWell', 'watchtower', 'drumTower', 'dog', 'lancer', 'javelineer'];
 const LEVELS = [
   {
     name: '边境劫掠', trait: '掠夺成性',
@@ -457,7 +493,8 @@ const S = {
   mouse: { x: 0, y: 0, wx: 0, wy: 0, inside: false },
   keys: {},
   prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
-  buildQ: { cur: null, queue: [] }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  buildQ: { cur: null, queue: [] },
+  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -553,7 +590,7 @@ function generateTerrain() {
     }
   }
 }
-function teamName(t) { return t === PLAYER ? '赤蔷薇' : t === ALLY ? '青杉盟军' : '黑鸦'; }
+function teamName(t) { return t === PLAYER ? factionOf().name : t === ALLY ? '青杉盟军' : '黑鸦'; }
 function bname(b) { return b.team === ENEMY ? B[b.type].enemyName : (b.team === ALLY ? '盟军·' : '') + B[b.type].name; }
 function uname(u) { return u.team === ENEMY ? U[u.type].enemyName : (u.team === ALLY ? '盟军·' : '') + U[u.type].name; }
 function isFriendlyTeam(a, b) { return a === b || (a !== ENEMY && b !== ENEMY); }
@@ -636,19 +673,34 @@ function scalePlayerHp(mul, filter) {
   }
 }
 function syncStartUI() {
-  const mode = S.run === 'skirmish' ? 'skirmish' : 'campaign';
+  const mode = S.tutorial ? 'tutorial' : (S.run === 'skirmish' ? 'skirmish' : 'campaign');
   $$('#mode-tabs .mode-tab').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   const cfg = $('#skirmish-config');
   if (cfg) cfg.hidden = mode !== 'skirmish';
   if (S.skirmish) {
     $$('#sk-gold button').forEach(b => b.classList.toggle('active', +b.dataset.gold === S.skirmish.gold));
     $$('#sk-inf button').forEach(b => b.classList.toggle('active', +b.dataset.inf === S.skirmish.inf));
+    $$('#sk-faction button').forEach(b => b.classList.toggle('active', b.dataset.faction === (S.skirmish.faction || 'rose')));
+    $$('#sk-map button').forEach(b => b.classList.toggle('active', b.dataset.map === (S.skirmish.map || 'random')));
     const t = $('#sk-super');
     if (t) t.classList.toggle('active', !!S.skirmish.supers);
   }
   updateCampaignUI();
 }
 function updateCampaignUI() {
+  if (S.tutorial) {
+    const kickerT = $$('.mission-kicker')[0];
+    const objT = $$('.mission-objective')[0];
+    if (kickerT) kickerT.textContent = '新手教学 · 边境营地';
+    if (objT) objT.innerHTML = `<i></i>按左侧步骤完成教学`;
+    const scT = $('#start-campaign');
+    if (scT) scT.textContent = '新手教学 · 从农民开始，学会采集、建造与进攻';
+    const loreT = $('.start-lore');
+    if (loreT) loreT.innerHTML = `新手教学<br>跟着左侧步骤走，一步一步学会这座战场`;
+    const mainT = $('#btn-start .start-btn-main');
+    if (mainT) mainT.textContent = '开 始 教 学';
+    return;
+  }
   if (S.run === 'skirmish') {
     const theme = (MAP_THEMES[S.mapTheme] || MAP_THEMES.border).name;
     const kickerS = $$('.mission-kicker')[0];
@@ -674,6 +726,52 @@ function updateCampaignUI() {
   if (lore) lore.innerHTML = `第 ${n} 章 · ${L.name}<br>敌军特质：${L.trait}${L.reward ? `　·　通关解锁：${L.rewardName}` : '　·　最终决战'}<br>固定资金 ${CAMPAIGN_GOLD}（主线不可调整）`;
   const main = $('#btn-start .start-btn-main');
   if (main) main.textContent = `开 始 第 ${n} 章`;
+}
+const TUT_STEPS = [
+  { text: '训练 2 名农民：选中主堡 → 兵种页 → 农民' },
+  { text: '采集 300 金币：选中农民，左键点金矿' },
+  { text: '建造 1 座农舍：建造页 → 农舍，就绪后放置' },
+  { text: '训练 3 名步兵：长矛 / 剑士 / 掷矛手' },
+  { text: '摧毁黑鸦哨站：全选部队，右键进攻' }
+];
+function tutorialState() {
+  const peasants = S.units.filter(u => u.team === PLAYER && u.type === 'peasant').length
+    + (S.prod.keep.cur && S.prod.keep.cur.type === 'peasant' ? 1 : 0)
+    + S.prod.keep.queue.filter(i => i.type === 'peasant').length;
+  const army = S.units.filter(u => u.team === PLAYER
+    && ['spearman', 'swordsman', 'archer', 'crossbowman', 'javelineer', 'lancer'].includes(u.type)).length;
+  return {
+    peasants,
+    gold: S.stats.gathered,
+    house: playerHasBuilding('house'),
+    army,
+    keepGone: !S.buildings.some(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0)
+  };
+}
+function renderTutorial() {
+  const el = $('#tutorial-panel');
+  if (!el) return;
+  el.hidden = !S.tutorial;
+  if (!S.tutorial) return;
+  el.innerHTML = '<b>新手教学</b>' + TUT_STEPS.map((s, i) =>
+    `<div class="tut-step ${i < S.tutStep ? 'done' : i === S.tutStep ? 'now' : ''}"><span>${i < S.tutStep ? '✔' : i + 1}</span>${s.text}</div>`).join('');
+}
+function updateTutorial(dt) {
+  if (!S.tutorial) return;
+  S.tutTimer = (S.tutTimer || 0) - dt;
+  if (S.tutTimer > 0) return;
+  S.tutTimer = .5;
+  const st = tutorialState();
+  const done = [st.peasants >= 2, st.gold >= 300, st.house, st.army >= 3, st.keepGone];
+  while (S.tutStep < TUT_STEPS.length && done[S.tutStep]) {
+    S.tutStep++;
+    if (S.tutStep < TUT_STEPS.length) toast(`教学步骤完成，下一步：${TUT_STEPS[S.tutStep].text}`, '', 'scroll');
+  }
+  renderTutorial();
+  if (S.tutStep >= TUT_STEPS.length && S.mode === 'playing') {
+    toast('教学完成：你已经学会采集、建造与进攻。', '', 'crest');
+    endGame(true);
+  }
 }
 function fmtTime(s) {
   s = Math.max(0, Math.ceil(s));
@@ -962,6 +1060,17 @@ function spawnSkirmishStart() {
       u.order = { type: 'move', x: cx + Math.cos(a) * (rr + 1.5), y: cy + Math.sin(a) * (rr + 1.5) };
     }
   }
+  if (S.tutorial) {
+    const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+    const cx = keep ? keep.x : 9.65, cy = keep ? keep.y : 36.35;
+    for (let i = 0; i < 2; i++) addUnit('peasant', PLAYER, cx - 1.4 + i * 1.2, cy + 2.4);
+    const bs = findKeepSpot(cx + 4, cy + 3);
+    if (bs) {
+      clearKeepArea(bs.tx, bs.ty);
+      const bk = addBuilding('barracks', bs.tx, bs.ty, PLAYER);
+      bk.constructed = true; bk.progress = 1;
+    }
+  }
   if (!S.buildings.some(b => b.type === 'keep')) {
     setTimeout(() => toast('开局落位失败，已退化为基地车开局：请先展开基地。', 'warn', 'workshop'), 1200);
   }
@@ -982,10 +1091,15 @@ function resetWorld() {
   S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.enemySuper = null; S.radar = false;
   S.stats = { kills: 0, losses: 0, gathered: 0 };
   const L = currentLevel();
+  S.faction = (S.run === 'skirmish' && S.skirmish && FACTIONS[S.skirmish.faction]) ? S.skirmish.faction : 'rose';
   S.supersEnabled = !(S.run === 'skirmish' && S.skirmish) || !!S.skirmish.supers;
   if (S.run === 'skirmish') {
-    const themes = Object.keys(MAP_THEMES);
-    S.mapTheme = themes[Math.floor(Math.random() * themes.length)];
+    const pick = S.skirmish && S.skirmish.map;
+    if (pick && pick !== 'random' && MAP_THEMES[pick]) S.mapTheme = pick;
+    else {
+      const themes = Object.keys(MAP_THEMES);
+      S.mapTheme = themes[Math.floor(Math.random() * themes.length)];
+    }
   } else {
     S.mapTheme = L.map || 'border';
   }
@@ -1624,7 +1738,7 @@ function moveTowards(u, tx, ty, dt, stop = 0) {
   const dx = gx - u.x, dy = gy - u.y, d = Math.hypot(dx, dy);
   const terr = terrainAt(u.x, u.y);
   const terrainSpeed = terr === 'marsh' ? .62 : terr === 'road' ? 1.25 : 1;
-  const step = d > .0001 ? Math.min(d, U[u.type].speed * terrainSpeed * (u.slowT > 0 ? .55 : 1)
+  const step = d > .0001 ? Math.min(d, U[u.type].speed * terrainSpeed * (u.slowT > 0 ? .55 : 1) * (u.buffSpd || 1)
     * (u.team === ENEMY ? (S.enemyMods?.speed || 1) : (u.team === PLAYER ? techSpeedMul(u) : 1)) * dt) : 0;
   let moved = false;
   if (step > .0001) {
@@ -1731,7 +1845,7 @@ function faceUnit(u, target) {
   if (Math.abs(p2.x - p1.x) > .01) u.facing = p2.x >= p1.x ? 1 : -1;
 }
 function shoot(u, target, dmg, team) {
-  let power = (dmg || U[u.type].dmg) * (team === ENEMY ? (S.enemyMods?.dmg || 1) : 1);
+  let power = (dmg || U[u.type].dmg) * (team === ENEMY ? (S.enemyMods?.dmg || 1) : 1) * (u.buffDmg || 1);
   if (u.type === 'crossbowman' && target.kind === 'building') power *= 1.15;
   if (u.type === 'catapult' && target.kind === 'building') power *= 1.8;
   if (u.type === 'scorpion' && target.kind === 'unit') power *= 1.2;
@@ -1790,6 +1904,10 @@ function engage(u, target, dt) {
 }
 function updateUnit(u, dt) {
   u.attackCd -= dt;  u.flash = Math.max(0, u.flash - dt);
+  if (u.buffT > 0) {
+    u.buffT -= dt;
+    if (u.buffT <= 0) { u.buffT = 0; u.buffSpd = 1; u.buffDmg = 1; }
+  }
   u.attackAnim = Math.max(0, u.attackAnim - dt);
   u.scan -= dt;
   u.moving = false;
@@ -2271,6 +2389,30 @@ function cancelBuild(type) {
   }
   return false;
 }
+function cancelTrain(type) {
+  if (S.mode !== 'playing' || S.paused) return false;
+  const def = U[type];
+  if (!def) return false;
+  const line = S.prod[def.producer];
+  if (!line) return false;
+  const cost = def.cost;
+  if (line.cur && line.cur.type === type) {
+    S.gold += cost;
+    line.cur = line.queue.length ? line.queue.shift() : null;
+    toast(`${def.name}已取消训练，退回 ${cost} 金币`, '', 'coin');
+    Sound.play('ui'); updateHud(true); renderQueue(); updateCards();
+    return true;
+  }
+  const idx = line.queue.findIndex(it => it.type === type);
+  if (idx >= 0) {
+    S.gold += cost;
+    line.queue.splice(idx, 1);
+    toast(`${def.name}已移出训练队列，退回 ${cost} 金币`, '', 'coin');
+    Sound.play('ui'); updateHud(true); renderQueue(); updateCards();
+    return true;
+  }
+  return false;
+}
 function updateConstruction(dt) {
   const q = S.buildQ;
   if (!q || !q.cur || q.cur.ready) return;
@@ -2410,6 +2552,8 @@ function cancelPlacement(silent = false) {
 function enemyUnits() { return S.units.filter(u => u.team === ENEMY); }
 function pickEnemyType(roll) {
   const lvl = S.campaignLevel;
+  if (S.run === 'skirmish' && roll < .12) return 'dog';
+  if (S.run === 'skirmish' && roll < .22) return 'lancer';
   if (lvl >= 2 && roll < .14) return 'shaman';
   if (lvl >= 1 && roll < .32) return 'assassin';
   if (lvl >= 3 && roll < .42) return 'knight';
@@ -2418,6 +2562,7 @@ function pickEnemyType(roll) {
   return 'knight';
 }
 function launchWave() {
+  if (S.tutorial) return;
   if (S.mode !== 'playing') return;
   const diff = DIFFS[S.diffKey];
   const L = currentLevel();
@@ -2447,6 +2592,7 @@ function launchWave() {
   S.wave.timer = Math.max(26, diff.every + (L.everyAdd || 0) - S.wave.n * 1.5);
 }
 function updateAI(dt) {
+  if (S.tutorial) return;
   const diff = DIFFS[S.diffKey];
   const L = currentLevel();
   S.enemy.buildRetry -= dt;
@@ -2485,6 +2631,7 @@ function updateAI(dt) {
   updateSecondAI(dt);
 }
 function enemyAssault() {
+  if (S.tutorial) return;
   const diff = DIFFS[S.diffKey];
   const target = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0)
     || S.units.find(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned);
@@ -2502,6 +2649,7 @@ function enemyAssault() {
   Sound.play('hornlow');
 }
 function updateEnemySuper(dt) {
+  if (S.tutorial) return;
   if (!S.supersEnabled) return;
   if (!S.enemySuper) return;
   const sup = SUPERS[S.enemySuper.key];
@@ -2642,6 +2790,7 @@ function deploySecondBaseVehicle(u) {
   return false;
 }
 function updateSecondAI(dt) {
+  if (S.tutorial) return;
   if (!S.secondAI) return;
   if (S.secondAI.baseVehicleTimer > 0) {
     S.secondAI.baseVehicleTimer -= dt;
@@ -2705,6 +2854,7 @@ function deployEnemyBaseVehicle(u) {
   return false;
 }
 function updateAllyAI(dt) {
+  if (S.tutorial) return;
   if (!S.allyEnabled || !S.allyAI) return;
   const base = allyBase();
   if (!base) return;
@@ -2747,6 +2897,7 @@ function update(dt) {
   updateCrates(dt);
   S.radar = playerHasBuilding('watchtower');
   S.superCd = Math.max(0, S.superCd - dt);
+  S.miniCd = Math.max(0, S.miniCd - dt);
   for (const f of S.superFx) f.t += dt;
   S.superFx = S.superFx.filter(f => f.t < f.dur);
   updateCamera(dt);
@@ -2761,6 +2912,7 @@ function update(dt) {
   for (const u of S.units) pushOutOfBuildings(u);
   updateTraining(dt);
   updateConstruction(dt);
+  updateTutorial(dt);
   Sound.ambient(dt);
   updateHud();
   if (S.time - (S.lastQueue || 0) > .15) {
@@ -3951,7 +4103,10 @@ function isSuperKey(key) {
 function renderCards() {
   const all = TABS[S.tab];
   const keys = all.filter(k => {
-    if (!S.supersEnabled && isSuperKey(k)) return false;
+    if (isSuperKey(k)) {
+      if (!S.supersEnabled) return false;
+      if (!factionSuperMatch(k)) return false;
+    }
     return TECH[k] ? true : isUnlocked(k);
   });
   if (!keys.length) {
@@ -3979,9 +4134,8 @@ function renderCards() {
     const key = btn.dataset.key;
     btn.addEventListener('click', (e) => onCard(key, e));
     btn.addEventListener('contextmenu', (e) => {
-      if (!B[key]) return;
-      e.preventDefault();
-      cancelBuild(key);
+      if (B[key]) { e.preventDefault(); cancelBuild(key); }
+      else if (U[key]) { e.preventDefault(); cancelTrain(key); }
     });
     btn.addEventListener('mouseenter', () => showTooltip(key, btn));
     btn.addEventListener('mouseleave', hideTooltip);
@@ -4097,7 +4251,7 @@ function researchTech(key) {
     S.superKey = t.superKey;
     S.superCd = 0;
     updateSuperUI();
-    toast(`超级武器已选定 · ${t.name}：点击右上角图标使用`, 'warn', t.icon);
+    toast(`超级武器已选定 · ${t.name}：点击右下角面板释放`, 'warn', t.icon);
   }
   if (key === 'plate') scalePlayerHp(1.2);
   if (key === 'royal') scalePlayerHp(1.2, u => u.type === 'knight' || u.type === 'hero');
@@ -4105,9 +4259,55 @@ function researchTech(key) {
   Sound.play('horn');
   updateHud(true); renderCards(); updateSelectionPanel(true);
 }
+function armMini() {
+  if (S.mode !== 'playing' || S.paused) return;
+  if (!playerHasBuilding('drumTower')) { toast('需要先建造战鼓台（T2）', 'warn', 'flag'); Sound.play('ui'); return; }
+  if (S.miniCd > 0) { toast(`战鼓冷却中：${Math.ceil(S.miniCd)} 秒`, 'warn', 'flag'); Sound.play('ui'); return; }
+  S.placing = null; S.superAim = false;
+  S.miniAim = !S.miniAim;
+  canvas.style.cursor = S.miniAim ? 'crosshair' : 'default';
+  updateSuperUI();
+  toast(S.miniAim ? '战鼓号令：左键选择范围（右键取消）' : '已取消战鼓号令', '', 'flag');
+}
+function applyMiniAt(x, y) {
+  const radius = B.drumTower.miniRadius;
+  let allies = 0, enemies = 0;
+  for (const u of S.units) {
+    if (u.hp <= 0 || u.garrisoned) continue;
+    if (Math.hypot(u.x - x, u.y - y) > radius) continue;
+    if (u.team === PLAYER) {
+      u.buffT = 12; u.buffSpd = 1.3; u.buffDmg = 1.2; allies++;
+      particle(u.x, u.y, { vx: rnd(-3, 3), vy: -12, z: 18, vz: 12, g: -2, life: .7, size: 2.2, color: '#ffd77a', type: 'spark' });
+    } else if (u.team === ENEMY) {
+      u.buffT = 12; u.buffSpd = .7; u.buffDmg = .8; enemies++;
+      particle(u.x, u.y, { vx: rnd(-3, 3), vy: 10, z: 18, vz: -4, g: 2, life: .7, size: 2.2, color: '#8f7bd6', type: 'spark' });
+    }
+  }
+  S.miniCd = B.drumTower.miniCd;
+  S.miniAim = false;
+  canvas.style.cursor = 'default';
+  burst(x, y, 'gold', 18);
+  toast(`战鼓号令：${allies} 名友军增益${enemies ? `，${enemies} 名敌军减益` : ''}`, '', 'flag');
+  Sound.play('horn');
+  updateSuperUI();
+}
+function updateMiniUI() {
+  const hud = document.getElementById('mini-hud');
+  if (!hud) return;
+  const has = playerHasBuilding('drumTower');
+  hud.hidden = !has;
+  if (!has) return;
+  hud.classList.toggle('cooling', S.miniCd > 0);
+  hud.classList.toggle('ready', S.miniCd <= 0);
+  const v = hud.querySelector('.sh-val');
+  if (v) v.textContent = S.miniCd > 0 ? Math.ceil(S.miniCd) + 's' : (S.miniAim ? '选点' : '就绪');
+  const bar = hud.querySelector('.sh-bar i');
+  if (bar) bar.style.width = S.miniCd > 0 ? clamp((1 - S.miniCd / B.drumTower.miniCd) * 100, 0, 100) + '%' : '100%';
+}
 function updateSuperUI() {
   const btn = els.superBtn;
   if (btn) btn.hidden = true;
+  updateMiniUI();
   const hud = $('#super-hud');
   const sup = selectedSuper();
   const show = !!sup && S.supersEnabled;
@@ -4131,6 +4331,7 @@ function updateSuperUI() {
   }
   const hintEl = hud.querySelector('.sh-hint');
   if (hintEl) hintEl.textContent = cooling ? '充能中' : (S.superAim ? '左键选点 · 右键取消' : '点击释放');
+  updateMiniUI();
 }
 function armSuper() {
   if (S.mode !== 'playing' || S.paused) return;
@@ -4733,9 +4934,12 @@ function bindUI() {
     Sound.play('ui');
   });
   $$('#mode-tabs .mode-tab').forEach(btn => btn.addEventListener('click', () => {
-    S.run = btn.dataset.mode === 'skirmish' ? 'skirmish' : 'campaign';
-    if (S.run === 'skirmish' && !S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
-    if (S.run === 'campaign') S.skirmish = null;
+    const mode = btn.dataset.mode;
+    S.tutorial = mode === 'tutorial';
+    S.run = (mode === 'skirmish' || mode === 'tutorial') ? 'skirmish' : 'campaign';
+    if (S.tutorial) S.skirmish = { gold: 600, inf: 0, supers: false, faction: 'rose', map: 'border' };
+    else if (S.run === 'skirmish' && !S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true, faction: 'rose', map: 'random' };
+    else if (S.run === 'campaign') S.skirmish = null;
     syncStartUI();
     Sound.play('ui');
   }));
@@ -4750,6 +4954,20 @@ function bindUI() {
     if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
     S.skirmish.inf = parseInt(btn.dataset.inf, 10);
     $$('#sk-inf button').forEach(b => b.classList.toggle('active', b === btn));
+    updateCampaignUI();
+    Sound.play('ui');
+  }));
+  $$('#sk-faction button').forEach(btn => btn.addEventListener('click', () => {
+    if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
+    S.skirmish.faction = btn.dataset.faction;
+    $$('#sk-faction button').forEach(b => b.classList.toggle('active', b === btn));
+    updateCampaignUI();
+    Sound.play('ui');
+  }));
+  $$('#sk-map button').forEach(btn => btn.addEventListener('click', () => {
+    if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
+    S.skirmish.map = btn.dataset.map;
+    $$('#sk-map button').forEach(b => b.classList.toggle('active', b === btn));
     updateCampaignUI();
     Sound.play('ui');
   }));
@@ -4778,10 +4996,14 @@ function bindUI() {
   });
   $('#btn-sound').addEventListener('click', toggleMute);
   $('#btn-pause').addEventListener('click', togglePause);
+  $('#btn-exit')?.addEventListener('click', () => goMenu());
+  $('#btn-quit')?.addEventListener('click', () => { hidePause(); goMenu(); });
   $('#btn-resume').addEventListener('click', togglePause);
   if (els.superBtn) els.superBtn.addEventListener('click', armSuper);
   const superHud = $('#super-hud');
   if (superHud) superHud.addEventListener('click', armSuper);
+  const miniHud = $('#mini-hud');
+  if (miniHud) miniHud.addEventListener('click', armMini);
   setInterval(updateSuperUI, 250);
   updateSuperUI();
   $('#btn-pause').innerHTML = icon('pause');
@@ -4817,12 +5039,19 @@ function onPointerDown(e) {
   }
   if (e.button === 2) {
     S.drag = null;
+    if (S.miniAim) { S.miniAim = false; canvas.style.cursor = 'default'; updateSuperUI(); return; }
     if (S.forceAim) { S.forceAim = false; canvas.style.cursor = 'default'; return; }
     const r = canvas.getBoundingClientRect();
     attackMoveAt(e.clientX - r.left, e.clientY - r.top);
     return;
   }
   if (e.button !== 0) return;
+  if (S.miniAim) {
+    const r = canvas.getBoundingClientRect();
+    const w = screenToWorld(e.clientX - r.left, e.clientY - r.top);
+    applyMiniAt(w.x, w.y);
+    return;
+  }
   if (S.forceAim) {
     const r = canvas.getBoundingClientRect();
     forceAttackAt(e.clientX - r.left, e.clientY - r.top);
@@ -5068,19 +5297,28 @@ function startGame() {
   const allyToggle = $('#ally-toggle');
   S.allyEnabled = allyToggle ? allyToggle.classList.contains('active') : params.get('ally') === '1';
   const modeTab = $$('#mode-tabs .mode-tab').find(b => b.classList.contains('active'));
-  S.run = modeTab && modeTab.dataset.mode === 'skirmish' ? 'skirmish' : 'campaign';
+  const modeSel = modeTab ? modeTab.dataset.mode : 'campaign';
+  S.tutorial = modeSel === 'tutorial';
+  S.tutStep = 0;
+  S.run = (modeSel === 'skirmish' || modeSel === 'tutorial') ? 'skirmish' : 'campaign';
   if (S.run === 'skirmish') {
     const gb = $$('#sk-gold button').find(b => b.classList.contains('active'));
     const ib = $$('#sk-inf button').find(b => b.classList.contains('active'));
     const st = $('#sk-super');
+    const fb = $$('#sk-faction button').find(b => b.classList.contains('active'));
+    const mb = $$('#sk-map button').find(b => b.classList.contains('active'));
     S.skirmish = {
       gold: gb ? parseInt(gb.dataset.gold, 10) : 2000,
       inf: ib ? parseInt(ib.dataset.inf, 10) : 4,
-      supers: st ? st.classList.contains('active') : true
+      supers: st ? st.classList.contains('active') : true,
+      faction: fb ? fb.dataset.faction : 'rose',
+      map: mb ? mb.dataset.map : 'random'
     };
   } else S.skirmish = null;
+  if (S.tutorial) S.skirmish = { gold: 600, inf: 0, supers: false, faction: 'rose', map: 'border' };
   updateCampaignUI();
   resetWorld();
+  if (S.tutorial) { S.tutStep = 0; renderTutorial(); }
   S.mode = 'playing'; S.paused = false;
   document.body.classList.remove('menu-mode');
   const st = $('#start-screen');
@@ -5196,11 +5434,20 @@ if (params.get('mode') === 'skirmish') {
   S.run = 'skirmish';
   const g = parseInt(params.get('gold'), 10);
   const inf = parseInt(params.get('inf'), 10);
+  const fac = params.get('faction');
+  const mp = params.get('map');
   S.skirmish = {
     gold: Number.isFinite(g) ? clamp(g, 200, 20000) : 2000,
     inf: Number.isFinite(inf) ? clamp(inf, 0, 12) : 4,
-    supers: params.get('super') !== '0'
+    supers: params.get('super') !== '0',
+    faction: FACTIONS[fac] ? fac : 'rose',
+    map: mp || 'random'
   };
+}
+if (params.get('mode') === 'tutorial' || params.get('tutorial') === '1') {
+  S.tutorial = true;
+  S.run = 'skirmish';
+  S.skirmish = { gold: 600, inf: 0, supers: false, faction: 'rose', map: 'border' };
 }
 if (params.get('debug') === '1') {
   window.__ic = S;
@@ -5230,6 +5477,7 @@ if (params.get('debug') === '1') {
         workshop: (S.prod.workshop.cur ? S.prod.workshop.cur.type : '-') + '/' + S.prod.workshop.queue.length
       },
       edgeDelta: window.__edgeDelta || 0,
+      tutorial: S.tutorial, tutStep: S.tutStep, faction: S.faction, miniCd: Math.round(S.miniCd),
       buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
       enemySuper: !!S.enemySuper,
       superHud: (() => {
@@ -5286,6 +5534,10 @@ if (supSelSpec && SUPERS[supSelSpec]) {
   updateSuperUI();
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
+// 调试用：?castmini=1 在主堡旁施放战鼓，验证增益/减益。
+const castMiniSpec = params.get('castmini');
+// 调试用：?cancelunit=spearman 取消兵种训练并退款。
+const cancelUnitSpec = params.get('cancelunit');
 const moveSpec = params.get('move');
 if (moveSpec && S.mode === 'playing') {
   const bits = moveSpec.split(',').map(Number);
@@ -5327,6 +5579,12 @@ if (trainSpec && S.mode === 'playing') {
     const bits = part.split(':');
     if (U[bits[0]]) tryTrain(bits[0], parseInt(bits[1] || '1', 10));
   }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+if (cancelUnitSpec && S.mode === 'playing') { cancelTrain(cancelUnitSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
+if (castMiniSpec && S.mode === 'playing') {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  if (keep) applyMiniAt(keep.x, keep.y + 2);
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 // 调试用：?end=win|lose 直接触发结算画面，便于无头测试结算 UI。

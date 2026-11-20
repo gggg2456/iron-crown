@@ -170,6 +170,7 @@
         </button>
         <button id="btn-sound" class="icon-btn" title="音效开关" aria-label="音效开关"><svg><use href="#i-sound"></use></svg></button>
         <button id="btn-pause" class="icon-btn" title="暂停 (P)" aria-label="暂停"><svg><use href="#i-pause"></use></svg></button>
+        <button id="btn-exit" class="icon-btn" title="退出到主界面" aria-label="退出"><svg><use href="#i-crest"></use></svg></button>
         <button id="btn-fullscreen" class="icon-btn" title="全屏" aria-label="全屏"><svg><use href="#i-expand"></use></svg></button>
       </div>
     </header>
@@ -213,6 +214,18 @@
         <div class="selection-content" id="selection-content" hidden></div>
       </div>
     </aside>
+
+    <div id="tutorial-panel" class="tutorial-panel" hidden></div>
+
+    <div id="mini-hud" class="super-hud mini-hud" hidden>
+      <svg class="sh-icon"><use href="#i-flag"></use></svg>
+      <div class="sh-body">
+        <span class="sh-name">战鼓号令</span>
+        <div class="sh-bar"><i style="width:100%"></i></div>
+        <span class="sh-hint">点击施放</span>
+      </div>
+      <span class="sh-val">就绪</span>
+    </div>
 
     <div id="super-hud" class="super-hud" hidden>
       <svg class="sh-icon"><use href="#i-catapult"></use></svg>
@@ -266,6 +279,7 @@
         <div class="mode-tabs" id="mode-tabs" role="group" aria-label="模式选择">
           <button class="mode-tab active" data-mode="campaign" type="button"><b>战 役</b><span>五章主线剧情</span></button>
           <button class="mode-tab" data-mode="skirmish" type="button"><b>遭 遇 战</b><span>人机对打</span></button>
+          <button class="mode-tab" data-mode="tutorial" type="button"><b>教 学</b><span>新手入门</span></button>
         </div>
         <div class="skirmish-config" id="skirmish-config" hidden>
           <div class="cfg-row"><span>起始资金</span>
@@ -283,6 +297,23 @@
               <button type="button" data-inf="4" class="active">4</button>
               <button type="button" data-inf="6">6</button>
               <button type="button" data-inf="8">8</button>
+            </div>
+          </div>
+          <div class="cfg-row"><span>阵营</span>
+            <div class="cfg-options" id="sk-faction">
+              <button type="button" data-faction="rose" class="active">赤蔷薇</button>
+              <button type="button" data-faction="pine">青杉</button>
+              <button type="button" data-faction="raven">黑鸦</button>
+            </div>
+          </div>
+          <div class="cfg-row"><span>地图</span>
+            <div class="cfg-options" id="sk-map">
+              <button type="button" data-map="random" class="active">随机</button>
+              <button type="button" data-map="border">边境</button>
+              <button type="button" data-map="highland">高地</button>
+              <button type="button" data-map="marsh">沼泽</button>
+              <button type="button" data-map="ash">灰烬</button>
+              <button type="button" data-map="throne">王座</button>
             </div>
           </div>
           <button class="cfg-toggle active" id="sk-super" type="button">
@@ -341,6 +372,7 @@
         <div class="modal-actions">
           <button id="btn-resume" class="btn gold">继续征战</button>
           <button id="btn-restart-pause" class="btn ghost">重新开始</button>
+          <button id="btn-quit" class="btn ghost">返回主界面</button>
         </div>
       </div>
     </section>
