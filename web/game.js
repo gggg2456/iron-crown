@@ -2342,6 +2342,11 @@ function updateTraining(dt) {
 /* ------------- building placement ------------- */
 function queueBuilding(type) {
   if (S.mode !== 'playing' || S.paused) return;
+  if (isSuperKey(type) && !factionSuperMatch(type)) {
+    toast(`本阵营不能建造该超级武器建筑（${factionOf().name} 专属：${SUPERS[factionOf().super].name}）`, 'warn', 'castle');
+    Sound.play('ui');
+    return;
+  }
   const q = S.buildQ;
   if (q.cur && q.cur.ready && q.cur.type === type) { startPlacement(type); return; }
   if (!playerHasKeep()) {
@@ -4229,6 +4234,11 @@ function onCard(key, ev) {
 function researchTech(key) {
   if (S.mode !== 'playing' || S.paused) return;
   const t = TECH[key];
+if (t && t.isSuper && !factionSuperMatch(key)) {
+    toast(`本阵营没有该超级武器（${factionOf().name} 专属：${SUPERS[factionOf().super].name}）`, 'warn', 'scroll');
+    Sound.play('ui');
+    return;
+  }
   if (!t || S.tech[key]) { toast('该科技已完成', '', 'scroll'); return; }
   const buildKey = techBuildingKey(t);
   if (buildKey && !playerHasBuilding(buildKey)) {
@@ -5478,6 +5488,7 @@ if (params.get('debug') === '1') {
       },
       edgeDelta: window.__edgeDelta || 0,
       tutorial: S.tutorial, tutStep: S.tutStep, faction: S.faction, miniCd: Math.round(S.miniCd),
+      superKey: S.superKey,
       buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
       enemySuper: !!S.enemySuper,
       superHud: (() => {
@@ -5582,6 +5593,8 @@ if (trainSpec && S.mode === 'playing') {
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 if (cancelUnitSpec && S.mode === 'playing') { cancelTrain(cancelUnitSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
+const researchSpec = params.get('research');
+if (researchSpec && S.mode === 'playing') { researchTech(researchSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
 if (castMiniSpec && S.mode === 'playing') {
   const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
   if (keep) applyMiniAt(keep.x, keep.y + 2);
