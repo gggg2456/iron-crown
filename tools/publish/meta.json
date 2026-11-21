@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.4.0-A：FACTION_MODS 阵营系数层\n\n规则：最终值 = 基础表 × UNIT_BONUS × FACTION_MODS；百分比相乘、固定值相加\n实测：赤蔷薇长矛 154 血；青杉长弓射程 6.6；黑鸦长矛造价 60 / 移速 2.13；青杉长戟对骑 28×1.4×1.1=43.12\n口径：pushMsPerFrame 是单帧平均（累计毫秒/帧数）；perfSep 数的是网格分桶后被检查的单位对数",
+  "commitMessage": "v1.4.0-A：FACTION_MODS 阵营系数层（口径修正）\n\n规则：最终值 = 基础表 × UNIT_BONUS × FACTION_MODS；百分比相乘、固定值相加\n口径：赤蔷薇 meleeHp/Dmg 只覆盖剑士/骑士；青杉射程 +1 只给单位不给建筑；黑鸦 −20% 造价给掷矛手\n实测：赤蔷薇剑士 138 / 骑士 253（长矛 140）；青杉长弓 6.6；黑鸦掷矛手 44、长矛 75、移速 2.13\n口径：pushMsPerFrame 单帧平均；perfSep 为网格分桶后检查的单位对数",
   "releaseName": "铁与王冠 v1.4.0 · Iron & Crown",
   "releaseBody": "## 铁与王冠 v1.4.0 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.0 改动\n\n- FACTION_MODS 阵营系数层（其余两项见后续提交）\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }

@@ -232,7 +232,7 @@ const FACTION_MODS = {
   raven: {
     meleeHpMul: 0.90, speedMul: 1.15, cavalrySpeedMul: 1.20,
     trainSpeedMul: 1.10, gatherMul: 0.90,
-    typeCost: { spearman: 0.80 }
+    typeCost: { javelineer: 0.80 }
   }
 };
 function factionMods() {
@@ -242,17 +242,20 @@ function modVal(key, def) {
   const v = factionMods()[key];
   return typeof v === 'number' ? v : (def === undefined ? 1 : def);
 }
+// 近战加成只覆盖正面战线（剑士/骑士）；长矛、长戟、英雄不吃，反骑线保持原样。
+const FRONTLINE_TYPES = new Set(['swordsman', 'knight']);
 function isMeleeType(type) { return U[type] ? U[type].range <= 2 : false; }
 function unitHpFactionMul(type) {
-  return modVal('hpMul') * (isMeleeType(type) ? modVal('meleeHpMul') : 1);
+  return modVal('hpMul') * (FRONTLINE_TYPES.has(type) ? modVal('meleeHpMul') : 1);
 }
 function unitDmgFactionMul(type) {
-  return modVal('dmgMul') * (isMeleeType(type) ? modVal('meleeDmgMul') : 1);
+  return modVal('dmgMul') * (FRONTLINE_TYPES.has(type) ? modVal('meleeDmgMul') : 1);
 }
 function unitSpeedFactionMul(type) {
   return modVal('speedMul') * (CAVALRY_TYPES.has(type) ? modVal('cavalrySpeedMul') : 1);
 }
 function unitRangeFactionAdd(type) {
+  // 射程加值只作用于单位，不作用于箭塔/城墙等建筑（建筑射程仍读 B[type].attack.range）。
   return isMeleeType(type) ? 0 : modVal('rangedRangeAdd', 0);
 }
 function unitCostFaction(type) {
