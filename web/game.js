@@ -1874,10 +1874,10 @@ function findSmartTarget(u, radius) {
   return best;
 }
 function orderMove(u, x, y) {
-  u.order = { type: 'move', x, y }; u.target = null; u.gather = null;
+  u.order = { type: 'move', x, y }; u.target = null; u.gather = null; u.crateRun = null;
 }
 function orderAttack(u, target) {
-  u.order = { type: 'attack', target }; u.target = target; u.gather = null;
+  u.order = { type: 'attack', target }; u.target = target; u.gather = null; u.crateRun = null;
 }
 /* ===== 5. COMBAT ===== */
 function faceUnit(u, target) {
@@ -2001,8 +2001,17 @@ function updateUnit(u, dt) {
   }
   if (u.order && u.order.type === 'move') {
     if (u.target && u.target.hp > 0) { engage(u, u.target, dt); return; }
+    if (u.crateRun) {
+      // 箱子没了（被捡/到期）或路上遇到敌人：立刻放弃拾箱
+      if (!S.crates.includes(u.crateRun)) { u.crateRun = null; u.order = null; return; }
+      if (u.team === ENEMY && u.scan <= 0) {
+        u.scan = .35;
+        const foe = findSmartTarget(u, Math.max(5.5, U[u.type].aggro || 0));
+        if (foe) { u.crateRun = null; u.order = null; u.target = foe; return; }
+      }
+    }
     const done = moveTowards(u, u.order.x, u.order.y, dt, .04);
-    if (done) u.order = null;
+    if (done) { u.order = null; u.crateRun = null; }
     return;
   }
   // idle
@@ -2015,10 +2024,6 @@ function updateUnit(u, dt) {
         ? findSmartTarget(u, U[u.type].aggro || 0)
         : findEnemyNear(u, U[u.type].aggro || 0);
       if (found) { u.target = found; return; }
-      if (u.team === ENEMY && !S.tutorial) {
-        const crate = nearestCrate(u, (VISION_U[u.type] || 7) + 1);
-        if (crate) { u.order = { type: 'move', x: crate.x, y: crate.y }; return; }
-      }
     }
   }
 }
@@ -2946,6 +2951,7 @@ function update(dt) {
     if (S.wave.timer <= 0) launchWave();
   }
   updateCrates(dt);
+  aiCrateTick(dt);
   S.radar = playerHasBuilding('watchtower');
   S.superCd = Math.max(0, S.superCd - dt);
   S.miniCd = Math.max(0, S.miniCd - dt);
@@ -3478,6 +3484,37 @@ function grantCrateEnemy(c) {
   Sound.play('ui');
   burst(c.x, c.y, 'dust', 10);
   return healed;
+}
+// AI 决策优先级（写死，不要再改顺序）：
+//   交战 > 防守 > 建造/训练 > 拾取宝箱 > 闲逛
+// 宝箱只在「AI 决策 tick」里扫一次（默认 1 秒），不随单位数量增长；一次只派一个单位。
+function aiCrateTick(dt) {
+  S.aiCrateT = (S.aiCrateT || 0) - dt;
+  if (S.aiCrateT > 0) return;
+  S.aiCrateT = 1;
+  S.crateScans = (S.crateScans || 0) + 1;
+  if (S.tutorial || S.run !== 'skirmish') return;
+  if (!S.crates.length) return;
+  // 已经有人在捡就不要再派人
+  if (S.units.some(u => u.team === ENEMY && u.crateRun && S.crates.includes(u.crateRun))) return;
+  let best = null, bestD = Infinity;
+  for (const c of S.crates) {
+    for (const u of S.units) {
+      if (u.team !== ENEMY || u.hp <= 0 || u.garrisoned) continue;
+      if (u.order || u.target) continue;      // 闲置：无指令、无攻击目标
+      if (u.type === 'peasant') continue;      // 采集单位不派
+      const vision = VISION_U[u.type] || 7;    // 只用 AI 自己的视野
+      const d = Math.hypot(u.x - c.x, u.y - c.y);
+      if (d > vision) continue;
+      if (d < bestD) { bestD = d; best = { u, c }; }
+    }
+  }
+  if (best) {
+    best.u.order = { type: 'move', x: best.c.x, y: best.c.y };
+    best.u.crateRun = best.c;
+    (S.crateLog = S.crateLog || []).push({ t: Math.round(S.time), id: best.u.id, type: best.u.type, idle: true });
+    if (S.crateLog.length > 12) S.crateLog.shift();
+  }
 }
 function updateCrates(dt) {
   S.crateTimer -= dt;
@@ -5573,6 +5610,8 @@ if (params.get('debug') === '1') {
       tab: S.tab,
       perfPath: S.perf ? S.perf.path : 0,
       cratePicks: S.crateStats ? (S.crateStats.player + '/' + S.crateStats.enemy) : '0/0',
+      crateScans: S.crateScans || 0,
+      crateLog: S.crateLog || [],
       perfSep: S.perf ? S.perf.sep : 0,
       keyLog: window.__keyLog || [],
       buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
@@ -5680,12 +5719,24 @@ if (trainSpec && S.mode === 'playing') {
 }
 if (cancelUnitSpec && S.mode === 'playing') { cancelTrain(cancelUnitSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
 const crateSpec = params.get('crate');
-if (crateSpec === '1' && S.mode === 'playing') {
+if (crateSpec && S.mode === 'playing') {
+  const n = Math.max(1, Math.min(6, parseInt(crateSpec, 10) || 1));
   const ek = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
   if (ek) {
-    S.crates.push({ x: ek.x + 3, y: ek.y + 2, kind: 'gold', phase: 0, life: 90 });
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2;
+      S.crates.push({ x: ek.x + Math.cos(ang) * 3, y: ek.y + Math.sin(ang) * 3, kind: 'gold', phase: i, life: 120 });
+    }
     if (window.__dbgUpdate) window.__dbgUpdate();
   }
+}
+const spawnPlayerSpec = params.get('spawnplayer');
+if (spawnPlayerSpec && S.mode === 'playing') {
+  // debug only: dx,dy offsets from the ENEMY keep
+  const bits = spawnPlayerSpec.split(',').map(Number);
+  const ek = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
+  if (ek && isFinite(bits[0]) && isFinite(bits[1])) addUnit('spearman', PLAYER, ek.x + bits[0], ek.y + bits[1]);
+  if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
 if (researchSpec && S.mode === 'playing') { researchTech(researchSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }

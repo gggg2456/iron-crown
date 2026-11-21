@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "铁与王冠 v1.3.1：AI 也会抢奖励箱",
-  "releaseName": "铁与王冠 v1.3.1 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.3.1 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.3.1 改动\n\n- **AI 也会抢奖励箱**：黑鸦闲置单位在视野内发现宝箱会自行前往拾取，抢到后治疗周围黑鸦部队\n- 宝箱从「玩家单方面领工资」变成双方争夺点，地图上多了一个自然交火理由\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图）、小超武战鼓台、数字键切页、A* 寻路与分离优化\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "铁与王冠 v1.3.2：AI 拾箱按派工单收口（单 tick / 单人 / 遇敌放弃）",
+  "releaseName": "铁与王冠 v1.3.2 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.3.2 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.3.2 改动\n\n- **AI 拾箱收口**：只在 AI 决策 tick 里每秒扫一次宝箱，一次只派一个「无指令、无目标、非农民」的闲置单位\n- **只用自身视野**判断，发现敌人立即放弃拾箱转为交战\n- 优先级固定为：交战 > 防守 > 建造/训练 > 拾取宝箱 > 闲逛\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图）、小超武战鼓台、数字键切页、A* 寻路与分离优化\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
