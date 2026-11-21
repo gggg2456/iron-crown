@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.4.0-B：农民临时征召民兵（V 键）\n\n规则：V 征召、攻 8/血 100、采集暂停、20 秒自动复原、不花金币、征召期不产金、阵亡不返还、最多 3 个\n键位：V 不再切页签，切页保留 1~5 / Tab / Z/X/C/B\n实测：5 农征召只成 3 个（上限生效）、23 秒后全部复原为农民",
+  "commitMessage": "v1.4.0-C：风险宝箱（+800 金并刷伏兵）\n\n规则：红边骷髅箱，拾取 +800 金并刷出 4+波次数（上限 8）黑鸦伏兵，复用现有刷兵+attackMove；AI 只捡普通箱；普通:风险 3:1，最多 1 个风险箱\n实测：拾取后金币 2000→2800、敌方 4→8 且会主动进攻",
   "releaseName": "铁与王冠 v1.4.0 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.4.0 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.0 改动\n\n- FACTION_MODS 阵营系数层\n- 农民征召民兵（V 键）\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "releaseBody": "## 铁与王冠 v1.4.0 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.0 改动\n\n- **FACTION_MODS 阵营系数**：赤蔷薇剑士/骑士更硬、青杉远程单位射程 +1 且守家更强、黑鸦更快更脆且掷矛手便宜 20%\n- **农民征召（V）**：选中农民按 V 变民兵（攻 8/血 100），20 秒自动复原，最多 3 个，征召期不产金\n- **风险宝箱**：红边骷髅箱，+800 金但立刻刷出黑鸦伏兵；AI 只捡普通箱\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }

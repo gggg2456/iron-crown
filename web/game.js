@@ -3537,17 +3537,23 @@ function drawCrate(c, now) {
   const fade = c.life < 10 ? Math.max(.22, c.life / 10) : 1;
   ctx.globalAlpha = fade;
   const glow = ctx.createRadialGradient(0, -18, 2, 0, -18, 30);
-  glow.addColorStop(0, 'rgba(240,205,120,.3)');
+  glow.addColorStop(0, c.curse ? 'rgba(210,70,60,.34)' : 'rgba(240,205,120,.3)');
   glow.addColorStop(1, 'rgba(240,205,120,0)');
   ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, -18, 30, 0, 7); ctx.fill();
   const top = { x: 0, y: -32 }, right = { x: 14, y: -24 }, bot = { x: 0, y: -16 }, left = { x: -14, y: -24 };
   drawPoly(ctx, [top, right, bot, left], '#7a5730', 'rgba(26,18,10,.65)', 1);
   drawPoly(ctx, [left, bot, { x: 0, y: -2 }, { x: -14, y: -10 }], '#4a3218', 'rgba(26,18,10,.65)', 1);
   drawPoly(ctx, [right, bot, { x: 0, y: -2 }, { x: 14, y: -10 }], '#5c3d1f', 'rgba(26,18,10,.65)', 1);
-  ctx.strokeStyle = '#e6c67e'; ctx.lineWidth = 1.4;
+  ctx.strokeStyle = c.curse ? '#e05a4a' : '#e6c67e'; ctx.lineWidth = 1.4;
   ctx.beginPath(); ctx.moveTo(left.x, left.y); ctx.lineTo(bot.x, bot.y); ctx.lineTo(right.x, right.y); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(0, -2); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(-5, -27); ctx.lineTo(5, -27); ctx.stroke();
+  if (c.curse) {
+    ctx.fillStyle = '#f0d6c8';
+    ctx.beginPath(); ctx.arc(0, -20, 3.4, 0, 7); ctx.fill();
+    ctx.fillStyle = '#2a1210';
+    ctx.beginPath(); ctx.arc(-1.2, -21, .9, 0, 7); ctx.arc(1.2, -21, .9, 0, 7); ctx.fill();
+  }
   const tw = Math.sin(now * 3 + c.phase);
   if (tw > .35) {
     ctx.fillStyle = 'rgba(255,242,196,.9)';
@@ -3565,13 +3571,37 @@ function spawnCrate() {
     if (S.goldNodes.some(g => Math.hypot(x - g.x, y - g.y) < 2.5)) continue;
     if (S.crates.some(c => Math.hypot(x - c.x, y - c.y) < 6)) continue;
     const kind = CRATE_KINDS[Math.floor(Math.random() * CRATE_KINDS.length)];
-    S.crates.push({ x, y, kind, phase: rnd(0, 9), life: 75 });
+    const risk = !S.crates.some(c => c.curse) && Math.random() < 0.25;
+    S.crates.push({ x, y, kind, curse: risk, phase: rnd(0, 9), life: 75 });
     burst(x, y, 'gold', 6);
     return true;
   }
   return false;
 }
+function spawnRaidAt(x, y, count) {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  for (let i = 0; i < count; i++) {
+    const type = pickEnemyType(Math.random());
+    const a = (i / count) * Math.PI * 2;
+    const u = addUnit(type, ENEMY, x + Math.cos(a) * 1.7, y + Math.sin(a) * 1.7);
+    if (keep) { u.order = { type: 'attackMove', x: keep.x, y: keep.y }; u.target = null; }
+  }
+  burst(x, y, 'fire', 26);
+  toast('风险箱炸开：黑鸦伏兵从四周涌出！', 'warn', 'shield');
+  Sound.play('boom');
+}
 function grantCrate(c) {
+  if (c.curse) {
+    S.gold += 800;
+    floatText(c.x, c.y, '+800 金币 · 伏兵！', '#e05a4a');
+    toast('风险箱：获得 800 金币，但附近刷出了黑鸦伏兵', 'warn', 'coin');
+    spawnRaidAt(c.x, c.y, Math.min(8, 4 + S.wave.n));
+    S.crateStats.aborts = S.crateStats.aborts;
+    burst(c.x, c.y, 'gold', 14);
+    Sound.play('ui');
+    updateHud(true);
+    return;
+  }
   if (c.kind === 'gold') {
     const amount = 200 + Math.floor(Math.random() * 200);
     S.gold += amount;
@@ -3663,6 +3693,7 @@ function aiCrateTick(dt) {
   if (S.units.some(u => u.team === ENEMY && u.crateRun && S.crates.includes(u.crateRun))) return;
   let best = null, bestD = Infinity;
   for (const c of S.crates) {
+    if (c.curse) continue; // AI 不捡风险箱
     for (const u of S.units) {
       if (u.team !== ENEMY || u.hp <= 0 || u.garrisoned) continue;
       if (u.order || u.target) continue;      // 闲置：无指令、无攻击目标
@@ -3695,6 +3726,7 @@ function updateCrates(dt) {
     for (const u of S.units) {
       if (u.garrisoned || u.hp <= 0) continue;
       if (Math.hypot(u.x - c.x, u.y - c.y) > 1.0) continue;
+      if (c.curse && u.team !== PLAYER) continue; // 风险箱只有玩家能开
       if (u.crateRun) { S.crateStats.picksDispatched++; u.crateRun = null; } else { S.crateStats.picksFree++; }
       if (u.team === PLAYER) { grantCrate(c); S.crateStats.picksPlayer++; }
       else if (u.team === ENEMY) { grantCrateEnemy(c); S.crateStats.picksEnemy++; }
@@ -4884,7 +4916,12 @@ function renderMinimap() {
   for (const c of S.crates) {
     if (!isVisibleToPlayer(c.x, c.y)) continue;
     const p = miniPoint(c.x, c.y);
-    mctx.fillStyle = '#f6dd9b'; mctx.beginPath(); mctx.arc(p.x, p.y, 2.4, 0, 7); mctx.fill();
+    if (c.curse) {
+      mctx.fillStyle = '#e05a4a';
+      mctx.beginPath(); mctx.moveTo(p.x, p.y - 3); mctx.lineTo(p.x + 3, p.y); mctx.lineTo(p.x, p.y + 3); mctx.lineTo(p.x - 3, p.y); mctx.closePath(); mctx.fill();
+    } else {
+      mctx.fillStyle = '#f6dd9b'; mctx.beginPath(); mctx.arc(p.x, p.y, 2.4, 0, 7); mctx.fill();
+    }
   }
   for (const b of S.buildings) {
     if (b.team === ENEMY && !isVisibleToPlayer(b.x, b.y)) continue;
@@ -5796,6 +5833,7 @@ if (params.get('debug') === '1') {
       militia: S.units.filter(u => u.team === PLAYER && u.militiaT > 0).length,
       militiaHp: (S.units.find(u => u.team === PLAYER && u.militiaT > 0) || {}).hp || 0,
       cratePicksFree: S.crateStats ? S.crateStats.picksFree : 0,
+      cursedCrates: S.crates.filter(c => c.curse).length,
       crateInFlight: S.units.filter(u => u.team === ENEMY && u.crateRun && S.crates.includes(u.crateRun)).length,
       crateBalanceOk: S.crateStats ? (S.crateStats.dispatches === S.crateStats.picksDispatched + S.crateStats.aborts + S.units.filter(u => u.team === ENEMY && u.crateRun && S.crates.includes(u.crateRun)).length) : true,
       crateAbortWhy: S.crateAborts || {},
@@ -5919,6 +5957,12 @@ if (cancelUnitSpec && S.mode === 'playing') { cancelTrain(cancelUnitSpec); if (w
 const crateTimeoutSpec = params.get('crateTimeout');
 if (crateTimeoutSpec === '1' && S.mode === 'playing') {
   for (const u of S.units) if (u.crateRun) u.crateRunLimit = 0.2;
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const cursedSpec = params.get('cursed');
+if (cursedSpec === '1' && S.mode === 'playing') {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  if (keep) S.crates.push({ x: keep.x + 2, y: keep.y + 2, kind: 'gold', curse: true, phase: 0, life: 120 });
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const crateSpec = params.get('crate');
