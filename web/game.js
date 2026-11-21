@@ -17,6 +17,8 @@ const ORIGIN = MAP * HW;
 const PLAYER = 'player', ENEMY = 'enemy', ALLY = 'ally';
 
 const CAMPAIGN_GOLD = 1200;
+// 农民征召：临时民兵（不花金币，征召期不产金，20 秒后自动复原，最多同时 3 个）
+const MILITIA = { dmg: 8, hp: 100, range: 1.2, time: 20, max: 3 };
 /* ===== 1. DATA TABLES ===== */
 const DIFFS = {
   squire: { first: 70, every: 65, base: 2, grow: 1.0, train: 19, max: 14 },
@@ -531,7 +533,7 @@ const MAP_THEMES = {
     farm: false, ruin: true
   }
 };
-const TAB_KEYS = { z: 'build', x: 'units', c: 'defense', v: 'siege', b: 'tech' };
+const TAB_KEYS = { z: 'build', x: 'units', c: 'defense', b: 'tech' };
 const TAB_ORDER = ['build', 'units', 'defense', 'siege', 'tech'];
 const TAB_LABELS = { build: '建造', units: '兵种', defense: '防御', siege: '攻城', tech: '科技' };
 // The original road network stops near the old center. These outer roads,
@@ -2001,13 +2003,13 @@ function heroCleave(u, target) {
 }
 function engage(u, target, dt) {
   if (!target || target.hp <= 0) { u.target = null; return; }
-  const range = U[u.type].range + (u.team === PLAYER ? unitRangeFactionAdd(u.type) : 0) + (target.kind === 'building' ? .8 : 0);
+  const range = (u.militiaT > 0 ? MILITIA.range : U[u.type].range) + (u.team === PLAYER ? unitRangeFactionAdd(u.type) : 0) + (target.kind === 'building' ? .8 : 0);
   const d = distanceTo(u, target);
   faceUnit(u, target);
   if (d <= range) {
     u.moving = false;
     if (u.attackCd <= 0) {
-      u.attackCd = U[u.type].cd;
+      u.attackCd = u.militiaT > 0 ? 1.1 : U[u.type].cd;
       u.attackAnim = .32;
       if (u.type === 'archer' || u.type === 'crossbowman' || u.type === 'scorpion' || u.type === 'catapult' || u.type === 'priest' || u.type === 'shaman' || u.type === 'tower' || u.type === 'keep') shoot(u, target, U[u.type] ? U[u.type].dmg : B[u.type].attack.dmg, u.team);
       else {
@@ -2016,7 +2018,7 @@ function engage(u, target, dt) {
         if (mBonus.vsCavalry && target.kind === 'unit' && CAVALRY_TYPES.has(target.type)) mul *= mBonus.vsCavalry;
         if (target.kind === 'building' && mBonus.vsBuilding) mul *= mBonus.vsBuilding;
         if (u.team === PLAYER) mul *= techDmgMul(u) * unitDmgFactionMul(u.type);
-        damage(target, U[u.type].dmg * mul * (u.team === ENEMY ? (S.enemyMods?.dmg || 1) : 1), u);
+        damage(target, (u.militiaT > 0 ? MILITIA.dmg : U[u.type].dmg) * mul * (u.team === ENEMY ? (S.enemyMods?.dmg || 1) : 1), u);
         if (u.type === 'hero' && u.cleaveCd <= 0) {
           u.cleaveCd = U.hero.cleaveEvery || 8;
           heroCleave(u, target);
@@ -2032,6 +2034,10 @@ function engage(u, target, dt) {
 }
 function updateUnit(u, dt) {
   u.attackCd -= dt;  u.flash = Math.max(0, u.flash - dt);
+  if (u.militiaT > 0) {
+    u.militiaT -= dt;
+    if (u.militiaT <= 0) revertMilitia(u);
+  }
   if (u.buffT > 0) {
     u.buffT -= dt;
     if (u.buffT <= 0) { u.buffT = 0; u.buffSpd = 1; u.buffDmg = 1; }
@@ -2492,6 +2498,40 @@ function updateTraining(dt) {
 }
 
 /* ------------- building placement ------------- */
+function militiaCount() {
+  return S.units.filter(u => u.team === PLAYER && u.militiaT > 0).length;
+}
+function tryMilitia() {
+  if (S.mode !== 'playing' || S.paused) return;
+  if (S.selectedBuilding) return;
+  const peasants = S.selected.filter(u => u.type === 'peasant' && u.team === PLAYER && u.hp > 0 && !u.garrisoned && !(u.militiaT > 0));
+  if (!peasants.length) { toast('选中农民后按 V 征召民兵', 'warn', 'peasant'); Sound.play('ui'); return; }
+  let room = MILITIA.max - militiaCount();
+  if (room <= 0) { toast('同时最多征召 ' + MILITIA.max + ' 个民兵', 'warn', 'sword'); Sound.play('ui'); return; }
+  let made = 0;
+  for (const u of peasants) {
+    if (room <= 0) break;
+    u.militiaT = MILITIA.time;
+    u.militiaOldMax = u.maxHp;
+    u.maxHp = MILITIA.hp;
+    u.hp = MILITIA.hp;
+    u.gatherOrder = (u.order && u.order.type === 'gather') ? u.order : null;
+    u.order = null; u.target = null; u.gather = null;
+    made++; room--;
+  }
+  if (made) {
+    toast(made + ' 名农民临时征召为民兵（' + MILITIA.time + ' 秒后复原，期间不产金）', 'warn', 'sword');
+    Sound.play('horn');
+  }
+}
+function revertMilitia(u) {
+  u.militiaT = 0;
+  const oldMax = u.militiaOldMax || U.peasant.hp;
+  u.maxHp = oldMax;
+  u.hp = Math.min(u.hp, oldMax);
+  u.militiaOldMax = 0;
+  if (u.gatherOrder) { u.order = u.gatherOrder; u.gatherOrder = null; }
+}
 function queueBuilding(type) {
   if (S.mode !== 'playing' || S.paused) return;
   if (isSuperKey(type) && !factionSuperMatch(type)) {
@@ -3884,6 +3924,14 @@ function drawUnit(u, now) {
   const sw = baseVehicle ? 27 : siege ? 24 : u.type === 'knight' ? 19 : u.type === 'hero' ? 14 : 9;
   ctx.beginPath(); ctx.ellipse(0, 1, sw, baseVehicle ? 8 : siege ? 7 : u.type === 'knight' ? 6 : u.type === 'hero' ? 4.6 : 3.4, 0, 0, 7); ctx.fill();
 
+  if (u.militiaT > 0) {
+    ctx.fillStyle = '#d9503f';
+    ctx.beginPath();
+    ctx.moveTo(0, -U[u.type].h - 10);
+    ctx.lineTo(6, -U[u.type].h - 4);
+    ctx.lineTo(0, -U[u.type].h + 2);
+    ctx.closePath(); ctx.fill();
+  }
   if (baseVehicle) {
     drawBaseVehicle(u, now);
   } else if (siege) {
@@ -4688,7 +4736,7 @@ function updateSelectionPanel(force = false) {
         <div class="sel-title"><strong>${uname(u)}</strong><span>${def.role} · ${status}</span></div>
       </div>
       <div class="sel-hp"><i style="width:${hp}%"></i><span>${Math.ceil(u.hp)} / ${u.maxHp}</span></div>
-      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
+      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.militiaT > 0 ? `<div class="sel-extra"><b>民兵</b><span>剩余 ${Math.ceil(u.militiaT)} 秒 · 征召期间不采集</span></div>` : ''}${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
       <div class="sel-extra"><b>战功 · ${RANKS[u.rank]}</b><span>${u.kills} 次击杀${u.rank < 3 ? ` · ${Math.ceil(u.xp)}/${u.rank === 1 ? 100 : 260} 经验` : ' · 已达最高军衔'}</span></div>`;
     } else {
       const groups = {};
@@ -5471,6 +5519,7 @@ function onKeyDown(e) {
     toast(S.forceAim ? '强制攻击：左键选择任意单位或建筑（包括友军），右键取消' : '已取消强制攻击', '', 'sword');
     return;
   }
+  if (k === 'v') { tryMilitia(); return; }
   if (k === 'r' && S.selectedBuilding) { repairBuilding(S.selectedBuilding); return; }
   if (k === 'g' && S.selectedBuilding) { ungarrison(S.selectedBuilding); return; }
   if (k === 'delete' && S.selectedBuilding) {
@@ -5744,6 +5793,8 @@ if (params.get('debug') === '1') {
       crateAborts: S.crateStats ? S.crateStats.aborts : 0,
       cratePicksDisp: S.crateStats ? S.crateStats.picksDispatched : 0,
       cratePicksAlly: S.crateStats ? S.crateStats.picksAlly : 0,
+      militia: S.units.filter(u => u.team === PLAYER && u.militiaT > 0).length,
+      militiaHp: (S.units.find(u => u.team === PLAYER && u.militiaT > 0) || {}).hp || 0,
       cratePicksFree: S.crateStats ? S.crateStats.picksFree : 0,
       crateInFlight: S.units.filter(u => u.team === ENEMY && u.crateRun && S.crates.includes(u.crateRun)).length,
       crateBalanceOk: S.crateStats ? (S.crateStats.dispatches === S.crateStats.picksDispatched + S.crateStats.aborts + S.units.filter(u => u.team === ENEMY && u.crateRun && S.crates.includes(u.crateRun)).length) : true,
@@ -5905,6 +5956,20 @@ if (fstatSpec && U[fstatSpec]) {
     range: U[fstatSpec].range + unitRangeFactionAdd(fstatSpec),
     speed: Math.round(U[fstatSpec].speed * unitSpeedFactionMul(fstatSpec) * 100) / 100
   };
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const peasantSpec = params.get('peasants');
+if (peasantSpec && S.mode === 'playing') {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  const cx = keep ? keep.x : 9.65, cy = keep ? keep.y : 36.35;
+  const pn = Math.min(8, parseInt(peasantSpec, 10) || 1);
+  for (let i = 0; i < pn; i++) addUnit('peasant', PLAYER, cx + Math.cos(i * 1.6) * 2, cy + Math.sin(i * 1.6) * 2 + 1.5);
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const militiaSpec = params.get('militia');
+if (militiaSpec && S.mode === 'playing') {
+  for (const u of S.units.filter(x => x.team === PLAYER && x.type === 'peasant')) S.selected.push(u);
+  tryMilitia();
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
