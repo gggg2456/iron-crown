@@ -64,9 +64,9 @@
 
 | 方式 | 做法 |
 | --- | --- |
-| **直接玩（完整版）** | 到 [Releases](https://github.com/gggg2456/iron-crown/releases) 下载 `IronCrown-1.1.2-win64.zip`，解压后双击 `IronCrown.exe` |
+| **直接玩（完整版）** | 到 [Releases](https://github.com/gggg2456/iron-crown/releases) 下载最新的 `IronCrown-*-win64.zip`，解压后双击 `IronCrown.exe` |
 | **源码运行** | `npm install` → `npm start` |
-| **本地免安装预览** | 直接用浏览器打开 `web/story.html`，无需任何构建 |
+| **免安装预览** | 直接用浏览器打开 `web/story.html`，无需任何构建 |
 
 - 运行环境：Windows 10 / 11 x64；独立版解压后约 358 MB，免安装、全程离线。
 - 源码运行需要 Node.js 20+（固定 Electron 45.3.4）。
