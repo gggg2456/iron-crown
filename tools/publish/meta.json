@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.4.2：AI 节奏修复（AI_PACE 进度表）\n\n修复前：敌方兵营 0 秒、超武建筑 0 秒（免费瞬建，跳过 T2/T3）\n修复后：兵营 10s、工坊 91s、超武建筑 182s 且必须先有工坊；训练节奏 ×1.35\n实测：敌方 60s 单位 12~13→11，到 22 上限 100s→150s；pathDef 5.1%→0.3%\n战役确认：enemySuper=false、无敌方超武建筑",
-  "releaseName": "铁与王冠 v1.4.2 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.4.2 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.2 改动\n\n- **AI 节奏修复**：敌方不再开局免费瞬建兵营与超武建筑；兵营 10s、工坊 91s、超武 182s（需先有工坊），训练节奏 ×1.35\n- 战役侧确认仍禁用敌方超武\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "v1.4.3：手感第一批（伤害数字 / 选择圈阵营描边 / 屏幕震动 / 完成闪光）\n\n- 伤害数字节流（≤26 条）、受击闪白沿用\n- 单位脚下阵营色圆环，选中加粗\n- 屏幕震动 1~2px，暂停菜单可关\n- 建造/训练完成时对应卡片闪金光\n- 核对：落地阴影与高 DPI 之前已实现",
+  "releaseName": "铁与王冠 v1.4.3 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.4.3 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.3 改动\n\n- 伤害数字、选择圈与阵营色描边、屏幕震动（可关）、完成闪光\n- 落地阴影与高 DPI 之前已存在\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }

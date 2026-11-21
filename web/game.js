@@ -575,7 +575,7 @@ const S = {
   keys: {},
   prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
   buildQ: { cur: null, queue: [] },
-  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, aiTimes: {}, aiTrace: [], crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 }, milStats: { calls: 0, made: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, aiTimes: {}, aiTrace: [], crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 }, milStats: { calls: 0, made: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null, shakeOn: true, shake: 0,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -1560,6 +1560,14 @@ function burst(wx, wy, type, n = 8) {
     else if (type === 'rubble') particle(wx, wy, { vx: rnd(-30, 30), vy: rnd(-20, 15), z: rnd(5, 35), vz: rnd(20, 60), g: 100, life: rnd(.5, 1.1), size: rnd(1.5, 4), color: Math.random() < .5 ? '#877b65' : '#5e584a', type: 'chip' });
   }
 }
+function flashCard(type) {
+  const el = document.querySelector('#cards [data-card="' + type + '"]');
+  if (!el) return;
+  el.classList.remove('done');
+  void el.offsetWidth;
+  el.classList.add('done');
+  setTimeout(() => el.classList.remove('done'), 750);
+}
 function floatText(wx, wy, text, color) {
   const p = mapPos(wx, wy);
   S.floats.push({ x: p.x, y: p.y - 24, text, color: color || '#e8cc90', life: 1.25 });
@@ -2043,6 +2051,7 @@ function engage(u, target, dt) {
 function updateUnit(u, dt) {
   u.attackCd -= dt;  u.flash = Math.max(0, u.flash - dt);
   if (u.fatigueT > 0) u.fatigueT -= dt;
+  if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 9);
   if (u.militiaT > 0) {
     u.militiaT -= dt;
     if (u.militiaT <= 0) revertMilitia(u);
@@ -2180,6 +2189,10 @@ function damage(target, amount, source) {
   target.hp -= amount;
   target.flash = .14;
   target.lastHurt = S.time;
+  if (target.kind === 'unit' && S.shakeOn) S.shake = Math.min(2.2, (S.shake || 0) + .5);
+  if (target.kind === 'unit' && amount >= 1 && S.floats.length < 26 && Math.random() < .3) {
+    floatText(target.x, target.y - .6, String(Math.max(1, Math.round(amount))), target.team === PLAYER ? '#ff9d8f' : '#ffe39a');
+  }
   if (target.kind === 'unit' && amount > 0 && Math.random() < .34) Voice.play('hit', target);
   const p = mapPos(target.x, target.y);
   burst(target.x, target.y, 'spark', 4);
@@ -2497,6 +2510,7 @@ function updateTraining(dt) {
         Sound.play('horn');
       } else {
         floatText(p.x, p.y, U[t.type].name, '#ecd28b');
+        flashCard(t.type);
         Sound.play('build');
       }
     }
@@ -2706,6 +2720,7 @@ function placeBuilding() {
   burst(b.x, b.y, 'dust', 16);
   Sound.play('buildPlace');
   floatText(b.x, b.y, `${def.name}落成`, '#e8cf94');
+  flashCard(type);
   toast(`${def.name}建造完成`, '', 'castle');
   cancelPlacement(true);
   if (S.buildQ.cur) S.buildQ.cur = null;
@@ -4020,7 +4035,13 @@ function drawUnit(u, now) {
   const baseVehicle = u.type === 'baseVehicle';
   ctx.fillStyle = 'rgba(0,0,0,.22)';
   const sw = baseVehicle ? 27 : siege ? 24 : u.type === 'knight' ? 19 : u.type === 'hero' ? 14 : 9;
-  ctx.beginPath(); ctx.ellipse(0, 1, sw, baseVehicle ? 8 : siege ? 7 : u.type === 'knight' ? 6 : u.type === 'hero' ? 4.6 : 3.4, 0, 0, 7); ctx.fill();
+  const shy = baseVehicle ? 8 : siege ? 7 : u.type === 'knight' ? 6 : u.type === 'hero' ? 4.6 : 3.4;
+  ctx.beginPath(); ctx.ellipse(0, 1, sw, shy, 0, 0, 7); ctx.fill();
+  const sel = S.selected.includes(u);
+  const ring = u.team === PLAYER ? '214,110,90' : u.team === ALLY ? '110,180,140' : '150,140,170';
+  ctx.strokeStyle = 'rgba(' + ring + ',' + (sel ? '.95' : '.4') + ')';
+  ctx.lineWidth = sel ? 1.8 : .8;
+  ctx.beginPath(); ctx.ellipse(0, 1, sw + (sel ? 3.5 : 2.2), shy + (sel ? 2 : 1.2), 0, 0, 7); ctx.stroke();
 
   if (u.militiaT > 0) {
     ctx.fillStyle = '#d9503f';
@@ -4403,7 +4424,9 @@ function render(now) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, VW, VH);
   ctx.fillStyle = '#0a0c08'; ctx.fillRect(0, 0, VW, VH);
-  ctx.setTransform(DPR * S.cam.z, 0, 0, DPR * S.cam.z, DPR * S.cam.x, DPR * S.cam.y);
+  const _shx = S.shake > 0 ? (Math.random() * 2 - 1) * S.shake : 0;
+  const _shy = S.shake > 0 ? (Math.random() * 2 - 1) * S.shake : 0;
+  ctx.setTransform(DPR * S.cam.z, 0, 0, DPR * S.cam.z, DPR * (S.cam.x + _shx), DPR * (S.cam.y + _shy));
   // 只绘制视口覆盖的地面区域，避免每帧缩放整张地图
   const wx1 = clamp((-S.cam.x) / S.cam.z - 4, 0, MAP_PX_W);
   const wy1 = clamp((-S.cam.y) / S.cam.z - 4, 0, MAP_PX_H);
@@ -5406,6 +5429,8 @@ function bindUI() {
   $('#btn-pause').addEventListener('click', togglePause);
   $('#btn-exit')?.addEventListener('click', () => goMenu());
   $('#btn-quit')?.addEventListener('click', () => { hidePause(); goMenu(); });
+  const shakeBox = $('#opt-shake');
+  if (shakeBox) shakeBox.addEventListener('change', e => { S.shakeOn = e.target.checked; });
   $('#btn-resume').addEventListener('click', togglePause);
   if (els.superBtn) els.superBtn.addEventListener('click', armSuper);
   const superHud = $('#super-hud');

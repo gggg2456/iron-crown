@@ -554,3 +554,5 @@ body.menu-mode #game-canvas { cursor: default; }
 .tut-step.done span { border-color: rgba(120,170,110,.5); color: #9ccb87; }
 .tut-step.now { color: #f0d8a4; }
 .tut-step.now span { border-color: #e0bd75; color: #ffe6b2; }
+.cmd-card.done { animation: cardDone .75s ease; }
+@keyframes cardDone { 0% { box-shadow: 0 0 0 0 rgba(240,205,120,.0); } 35% { box-shadow: 0 0 0 3px rgba(240,205,120,.75); } 100% { box-shadow: 0 0 0 0 rgba(240,205,120,0); } }
