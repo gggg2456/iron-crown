@@ -51,7 +51,6 @@
 | **多条产线队列** | 兵营 / 车厂 / 主堡各自独立产线，可混排不同兵种、可重复排队；Shift+点击一次排 5 个 |
 | **每章结算画面** | 胜负都有结算：用时、歼灭、损失、采集与 S–D 评价，胜利可进下一章 |
 | **主线固定资金** | 战役起始资金固定 1200，主界面不提供调整入口；遭遇战才可自定义 |
-| **网页版转私有** | 关闭 GitHub Pages，改用 `start-test.cmd` 本地测试 |
 
 ## v1.1 新增
 
@@ -65,14 +64,12 @@
 
 | 方式 | 做法 |
 | --- | --- |
-| **本地测试（仅自己）** | 双击仓库根目录的 `start-test.cmd`，浏览器访问 `http://127.0.0.1:8765/story.html`（仅本机可访问） |
 | **直接玩（完整版）** | 到 [Releases](https://github.com/gggg2456/iron-crown/releases) 下载 `IronCrown-1.1.2-win64.zip`，解压后双击 `IronCrown.exe` |
 | **源码运行** | `npm install` → `npm start` |
 | **本地免安装预览** | 直接用浏览器打开 `web/story.html`，无需任何构建 |
 
 - 运行环境：Windows 10 / 11 x64；独立版解压后约 358 MB，免安装、全程离线。
 - 源码运行需要 Node.js 20+（固定 Electron 45.3.4）。
-- **GitHub Pages 已停用**（这个网页版是私有测试构建，不对公网开放）；本地测试服务器与独立版跑的是同一份 `game.js`。
 
 ## 玩法概览
 
@@ -240,7 +237,7 @@
 └─ tools/
    ├─ package.ps1        一键构建独立版 + 发布 zip
    ├─ build-pages.ps1    从 web/ 生成 docs/ 站点（已停用）
-   ├─ serve.ps1          本机私有测试服务器（127.0.0.1）
+   ├─ serve.ps1          静态文件服务器（端口 8765）
    └─ publish/           无 git 环境下的 REST 发布脚本（start-login / poller / push / meta）
 ```
 
@@ -250,7 +247,6 @@
 npm install
 npm run package                      # 输出 dist\IronCrown-win32-x64\
 npm run dist                         # 额外压出 dist\IronCrown-1.1.0-win64.zip
-start-test.cmd                        # 双击即可本地测试（127.0.0.1:8765）
 ```
 
 ## 发布到 GitHub（无需 git）
