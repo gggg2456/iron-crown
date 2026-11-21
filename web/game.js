@@ -17,6 +17,8 @@ const ORIGIN = MAP * HW;
 const PLAYER = 'player', ENEMY = 'enemy', ALLY = 'ally';
 
 const CAMPAIGN_GOLD = 1200;
+// AI 进度表：AI 没有金币经济，只用时间门槛控制发育节奏（三档难度可再分档）
+const AI_PACE = { barracksAt: 10, workshopAt: 90, superAt: 180, trainMul: 1.35 };
 // 农民征召：临时民兵（不花金币，征召期不产金，20 秒后自动复原，最多同时 3 个）
 const MILITIA = { dmg: 8, hp: 100, range: 1.2, time: 20, max: 3 };
 /* ===== 1. DATA TABLES ===== */
@@ -573,7 +575,7 @@ const S = {
   keys: {},
   prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
   buildQ: { cur: null, queue: [] },
-  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 }, milStats: { calls: 0, made: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, aiTimes: {}, aiTrace: [], crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 }, milStats: { calls: 0, made: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -1071,6 +1073,10 @@ function addBuilding(type, tx, ty, team) {
     dead: false
   };
   S.buildings.push(b);
+  if (team === ENEMY) {
+    S.aiTimes = S.aiTimes || {};
+    if (!S.aiTimes[type]) S.aiTimes[type] = Math.round(S.time);
+  }
   return b;
 }
 function addUnit(type, team, x, y) {
@@ -1170,6 +1176,7 @@ function resetWorld() {
   S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
   S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
   S.perf = { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 };
+  S.aiTimes = {}; S.aiTrace = [];
   S.crateStats = { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 };
   S.milStats = { calls: 0, made: 0 };
   S.crateAborts = { combat: 0, gone: 0, timeout: 0 };
@@ -2771,6 +2778,7 @@ function launchWave() {
   const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
   if (!keep) { S.wave.timer = 3; return; }
   S.wave.n++;
+  if (!S.aiTimes.firstWave) S.aiTimes.firstWave = Math.round(S.time);
   const desired = diff.base + Math.floor(S.wave.n * diff.grow) + (L.extra || 0);
   const barracks = S.buildings.find(b => b.team === ENEMY && b.type === 'barracks');
   const waveUnits = [];
@@ -2802,10 +2810,11 @@ function updateAI(dt) {
   if (S.enemy.buildRetry <= 0) {
     S.enemy.buildRetry = 5;
     tryBuildEnemyBarracks();
+    tryBuildEnemyWorkshop();
   }
   S.enemy.nextTrain -= dt;
   if (S.enemy.nextTrain <= 0) {
-    S.enemy.nextTrain = diff.train * (L.trainMul || 1) * rnd(.85, 1.2);
+    S.enemy.nextTrain = diff.train * (L.trainMul || 1) * rnd(.85, 1.2) * AI_PACE.trainMul;
     if (enemyUnits().length < diff.max + (L.extra || 0)) {
       const base = S.buildings.find(b => b.team === ENEMY && b.type === 'barracks');
       if (base) {
@@ -2878,6 +2887,7 @@ function updateEnemySuper(dt) {
   if (S.enemySuper.timer <= 0) castEnemySuper();
 }
 function tryBuildEnemyBarracks() {
+  if (S.time < AI_PACE.barracksAt) return false;
   if (S.buildings.some(b => b.team === ENEMY && b.type === 'barracks' && b.hp > 0 && !b.dead)) return true;
   const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0 && !b.dead);
   if (!keep) return false;
@@ -2894,8 +2904,28 @@ function tryBuildEnemyBarracks() {
   }
   return false;
 }
+function tryBuildEnemyWorkshop() {
+  if (S.time < AI_PACE.workshopAt) return false;
+  if (S.buildings.some(b => b.team === ENEMY && b.type === 'workshop' && b.hp > 0 && !b.dead)) return true;
+  const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0 && !b.dead);
+  if (!keep) return false;
+  for (let r = 3; r <= 10; r++) {
+    for (let a = 0; a < 16; a++) {
+      const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 2), 0, MAP - 3);
+      const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 2), 0, MAP - 3);
+      if (!canPlace('workshop', tx, ty, { ignoreBuildRadius: true })) continue;
+      const b = addBuilding('workshop', tx, ty, ENEMY);
+      b.constructed = true; b.progress = 1;
+      burst(b.x, b.y, 'dust', 18);
+      return true;
+    }
+  }
+  return false;
+}
 function tryBuildEnemySuperBuilding() {
   if (S.run !== 'skirmish') return false;
+  if (S.time < AI_PACE.superAt) return false;
+  if (!S.buildings.some(b => b.team === ENEMY && b.type === 'workshop' && b.hp > 0 && !b.dead)) return false;
   if (!S.supersEnabled) return false;
   if (!S.enemySuper || S.enemySuper.built) return false;
   const sup = SUPERS[S.enemySuper.key];
@@ -3101,6 +3131,10 @@ function update(dt) {
   updateCrates(dt);
   aiCrateTick(dt);
   S.radar = playerHasBuilding('watchtower');
+  if (!S.aiTraceT || S.time >= S.aiTraceT) {
+    S.aiTraceT = (S.time || 0) + 10;
+    if (S.aiTrace.length < 40) S.aiTrace.push({ t: Math.round(S.time), u: S.units.filter(x => x.team === ENEMY).length });
+  }
   S.superCd = Math.max(0, S.superCd - dt);
   S.miniCd = Math.max(0, S.miniCd - dt);
   for (const f of S.superFx) f.t += dt;
@@ -5878,6 +5912,8 @@ if (params.get('debug') === '1') {
       sepMsMilMax: S.perf ? Math.round((S.perf.sepMsMilMax || 0) * 1000) / 1000 : 0,
       riskPicks: S.crateStats ? S.crateStats.riskPicks : 0,
       dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
+      aiTimes: S.aiTimes || {},
+      aiTrace: S.aiTrace || [],
       dogBonusCrates: S.crates.filter(c => c.dogBonus).length,
       riskSpawns: S.crateStats ? S.crateStats.riskSpawns : 0,
       militiaHp: (S.units.find(u => u.team === PLAYER && u.militiaT > 0) || {}).hp || 0,
