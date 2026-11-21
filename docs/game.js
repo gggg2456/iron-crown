@@ -1105,6 +1105,7 @@ function resetWorld() {
   S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
   S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
   S.perf = { path: 0, sep: 0 };
+  S.crateStats = { player: 0, enemy: 0 };
   S.pathBudget = 4;
   S.buildQ = { cur: null, queue: [] };
   S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.enemySuper = null; S.radar = false;
@@ -2014,6 +2015,10 @@ function updateUnit(u, dt) {
         ? findSmartTarget(u, U[u.type].aggro || 0)
         : findEnemyNear(u, U[u.type].aggro || 0);
       if (found) { u.target = found; return; }
+      if (u.team === ENEMY && !S.tutorial) {
+        const crate = nearestCrate(u, (VISION_U[u.type] || 7) + 1);
+        if (crate) { u.order = { type: 'move', x: crate.x, y: crate.y }; return; }
+      }
     }
   }
 }
@@ -3450,6 +3455,30 @@ function grantCrate(c) {
   burst(c.x, c.y, 'gold', 16);
   updateHud(true);
 }
+function nearestCrate(u, radius) {
+  let best = null, bd = Infinity;
+  for (const c of S.crates) {
+    const d = Math.hypot(u.x - c.x, u.y - c.y);
+    if (d > radius || d >= bd) continue;
+    bd = d; best = c;
+  }
+  return best;
+}
+function grantCrateEnemy(c) {
+  let healed = 0;
+  for (const u of S.units) {
+    if (u.team !== ENEMY || u.hp <= 0 || u.garrisoned) continue;
+    if (Math.hypot(u.x - c.x, u.y - c.y) > 7) continue;
+    if (u.hp >= u.maxHp) continue;
+    u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .2);
+    healed++;
+  }
+  floatText(c.x, c.y, '黑鸦拾取补给', '#c9a0a0');
+  toast('黑鸦部队抢先捡走了一个奖励箱', 'warn', 'shield');
+  Sound.play('ui');
+  burst(c.x, c.y, 'dust', 10);
+  return healed;
+}
 function updateCrates(dt) {
   S.crateTimer -= dt;
   if (S.crateTimer <= 0) {
@@ -3460,9 +3489,11 @@ function updateCrates(dt) {
     c.life -= dt;
     if (c.life <= 0) { S.crates = S.crates.filter(x => x !== c); continue; }
     for (const u of S.units) {
-      if (u.team !== PLAYER || u.garrisoned || u.hp <= 0) continue;
+      if (u.garrisoned || u.hp <= 0) continue;
       if (Math.hypot(u.x - c.x, u.y - c.y) > 1.0) continue;
-      grantCrate(c);
+      if (u.team === PLAYER) { grantCrate(c); S.crateStats.player++; }
+      else if (u.team === ENEMY) { grantCrateEnemy(c); S.crateStats.enemy++; }
+      else continue;
       S.crates = S.crates.filter(x => x !== c);
       break;
     }
@@ -5541,6 +5572,7 @@ if (params.get('debug') === '1') {
       superKey: S.superKey,
       tab: S.tab,
       perfPath: S.perf ? S.perf.path : 0,
+      cratePicks: S.crateStats ? (S.crateStats.player + '/' + S.crateStats.enemy) : '0/0',
       perfSep: S.perf ? S.perf.sep : 0,
       keyLog: window.__keyLog || [],
       buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
@@ -5647,6 +5679,14 @@ if (trainSpec && S.mode === 'playing') {
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 if (cancelUnitSpec && S.mode === 'playing') { cancelTrain(cancelUnitSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
+const crateSpec = params.get('crate');
+if (crateSpec === '1' && S.mode === 'playing') {
+  const ek = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
+  if (ek) {
+    S.crates.push({ x: ek.x + 3, y: ek.y + 2, kind: 'gold', phase: 0, life: 90 });
+    if (window.__dbgUpdate) window.__dbgUpdate();
+  }
+}
 const researchSpec = params.get('research');
 if (researchSpec && S.mode === 'playing') { researchTech(researchSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
 const keysSpec = params.get('keys');

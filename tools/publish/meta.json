@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "铁与王冠 v1.3.0：单文件分区、战斗数据化、寻路错峰与分离加速",
-  "releaseName": "铁与王冠 v1.3.0 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.3.0 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.3.0 改动（代码可维护性，行为不变）\n\n- **单文件分区**：game.js 内按数据表/状态/工具/寻路/战斗/经济/AI/渲染/UI/启动十区排布\n- **战斗数据化**：兵种克制与攻城加成进 `UNIT_BONUS` 数据表，逻辑不再写死兵种类型判断\n- **寻路错峰**：每帧最多 4 条路径计算，其余单位沿用旧路径\n- **分离加速**：2 格网格分桶替代两两比对，20 单位混战约 19 次/帧（原约 190 对/帧）\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图）、小超武战鼓台、奖励箱、数字键切页\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "铁与王冠 v1.3.1：AI 也会抢奖励箱",
+  "releaseName": "铁与王冠 v1.3.1 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.3.1 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.3.1 改动\n\n- **AI 也会抢奖励箱**：黑鸦闲置单位在视野内发现宝箱会自行前往拾取，抢到后治疗周围黑鸦部队\n- 宝箱从「玩家单方面领工资」变成双方争夺点，地图上多了一个自然交火理由\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图）、小超武战鼓台、数字键切页、A* 寻路与分离优化\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
