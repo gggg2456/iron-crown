@@ -573,7 +573,7 @@ const S = {
   keys: {},
   prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
   buildQ: { cur: null, queue: [] },
-  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0 }, milStats: { calls: 0, made: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -1170,7 +1170,8 @@ function resetWorld() {
   S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
   S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
   S.perf = { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 };
-  S.crateStats = { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0 };
+  S.crateStats = { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0 };
+  S.milStats = { calls: 0, made: 0 };
   S.crateAborts = { combat: 0, gone: 0, timeout: 0 };
   S.pathBudget = 4;
   S.buildQ = { cur: null, queue: [] };
@@ -1859,7 +1860,7 @@ function moveTowards(u, tx, ty, dt, stop = 0) {
   const terr = terrainAt(u.x, u.y);
   const terrainSpeed = terr === 'marsh' ? .62 : terr === 'road' ? 1.25 : 1;
   const step = d > .0001 ? Math.min(d, U[u.type].speed * terrainSpeed * (u.slowT > 0 ? .55 : 1) * (u.buffSpd || 1)
-    * (u.team === ENEMY ? (S.enemyMods?.speed || 1) : (u.team === PLAYER ? techSpeedMul(u) * unitSpeedFactionMul(u.type) : 1)) * dt) : 0;
+    * (u.team === ENEMY ? (S.enemyMods?.speed || 1) : (u.team === PLAYER ? techSpeedMul(u) * unitSpeedFactionMul(u.type) * (u.buffT > 0 ? 1 : (u.fatigueT > 0 ? .9 : 1)) : 1)) * dt) : 0;
   let moved = false;
   if (step > .0001) {
     const nx = u.x + dx / d * step, ny = u.y + dy / d * step;
@@ -2034,6 +2035,7 @@ function engage(u, target, dt) {
 }
 function updateUnit(u, dt) {
   u.attackCd -= dt;  u.flash = Math.max(0, u.flash - dt);
+  if (u.fatigueT > 0) u.fatigueT -= dt;
   if (u.militiaT > 0) {
     u.militiaT -= dt;
     if (u.militiaT <= 0) revertMilitia(u);
@@ -2503,6 +2505,7 @@ function militiaCount() {
 }
 function tryMilitia() {
   if (S.mode !== 'playing' || S.paused) return;
+  S.milStats.calls++;
   if (S.selectedBuilding) return;
   const peasants = S.selected.filter(u => u.type === 'peasant' && u.team === PLAYER && u.hp > 0 && !u.garrisoned && !(u.militiaT > 0));
   if (!peasants.length) { toast('选中农民后按 V 征召民兵', 'warn', 'peasant'); Sound.play('ui'); return; }
@@ -2518,6 +2521,7 @@ function tryMilitia() {
     u.gatherOrder = (u.order && u.order.type === 'gather') ? u.order : null;
     u.order = null; u.target = null; u.gather = null;
     made++; room--;
+    S.milStats.made++;
   }
   if (made) {
     toast(made + ' 名农民临时征召为民兵（' + MILITIA.time + ' 秒后复原，期间不产金）', 'warn', 'sword');
@@ -3114,7 +3118,13 @@ function update(dt) {
   const _t1 = performance.now();
   for (const u of S.units) if (u.type === 'baseVehicle') pushOutOfBuildings(u);
   const _t2 = performance.now();
-  S.perf.sepMs += _t1 - _t0;
+  const _sepDt = _t1 - _t0;
+  S.perf.sepMs += _sepDt;
+  S.perf.sepMsMax = Math.max(S.perf.sepMsMax || 0, _sepDt);
+  if (S.units.some(u => u.team === PLAYER && u.militiaT > 0)) {
+    S.perf.sepMsMilMax = Math.max(S.perf.sepMsMilMax || 0, _sepDt);
+    S.perf.sepMilFrames = (S.perf.sepMilFrames || 0) + 1;
+  }
   S.perf.pushMs += _t2 - _t1;
   S.perf.frames++;
   updateTraining(dt);
@@ -3573,6 +3583,7 @@ function spawnCrate() {
     const kind = CRATE_KINDS[Math.floor(Math.random() * CRATE_KINDS.length)];
     const risk = !S.crates.some(c => c.curse) && Math.random() < 0.25;
     S.crates.push({ x, y, kind, curse: risk, phase: rnd(0, 9), life: 75 });
+    if (risk) S.crateStats.riskSpawns++;
     burst(x, y, 'gold', 6);
     return true;
   }
@@ -3592,6 +3603,7 @@ function spawnRaidAt(x, y, count) {
 }
 function grantCrate(c) {
   if (c.curse) {
+    S.crateStats.riskPicks++;
     S.gold += 800;
     floatText(c.x, c.y, '+800 金币 · 伏兵！', '#e05a4a');
     toast('风险箱：获得 800 金币，但附近刷出了黑鸦伏兵', 'warn', 'coin');
@@ -4768,7 +4780,7 @@ function updateSelectionPanel(force = false) {
         <div class="sel-title"><strong>${uname(u)}</strong><span>${def.role} · ${status}</span></div>
       </div>
       <div class="sel-hp"><i style="width:${hp}%"></i><span>${Math.ceil(u.hp)} / ${u.maxHp}</span></div>
-      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.militiaT > 0 ? `<div class="sel-extra"><b>民兵</b><span>剩余 ${Math.ceil(u.militiaT)} 秒 · 征召期间不采集</span></div>` : ''}${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
+      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.buffT > 0 ? `<div class="sel-extra"><b>伏击</b><span>剩余 ${u.buffT.toFixed(1)} 秒 · 移速 +20% / 伤害 +15%</span></div>` : (u.fatigueT > 0 ? `<div class="sel-extra"><b>疲惫</b><span>剩余 ${u.fatigueT.toFixed(1)} 秒 · 移速 −10%</span></div>` : '')}${u.militiaT > 0 ? `<div class="sel-extra"><b>民兵</b><span>剩余 ${Math.ceil(u.militiaT)} 秒 · 征召期间不采集</span></div>` : ''}${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
       <div class="sel-extra"><b>战功 · ${RANKS[u.rank]}</b><span>${u.kills} 次击杀${u.rank < 3 ? ` · ${Math.ceil(u.xp)}/${u.rank === 1 ? 100 : 260} 经验` : ' · 已达最高军衔'}</span></div>`;
     } else {
       const groups = {};
@@ -5214,9 +5226,16 @@ function evacuateGarrison(b) {
 function ungarrison(b) {
   const units = evacuateGarrison(b);
   if (!units.length) return;
+  // 驻军出击：出城 3 秒伏击加成（+20% 移速 / +15% 伤害），随后 10 秒疲惫（−10% 移速）
+  for (const u of units) {
+    u.buffT = 3;
+    u.buffSpd = 1.2;
+    u.buffDmg = 1.15;
+    u.fatigueT = 13;
+  }
   S.selected = units;
   S.selectedBuilding = null; S.inspect = null;
-  toast('驻军已出城列阵', '', 'sword');
+  toast('驻军出击：3 秒伏击加成（+20% 移速 / +15% 伤害），之后 10 秒疲惫', '', 'sword');
   Sound.play('ui');
   updateSelectionPanel(true);
 }
@@ -5831,6 +5850,14 @@ if (params.get('debug') === '1') {
       cratePicksDisp: S.crateStats ? S.crateStats.picksDispatched : 0,
       cratePicksAlly: S.crateStats ? S.crateStats.picksAlly : 0,
       militia: S.units.filter(u => u.team === PLAYER && u.militiaT > 0).length,
+      ambush: S.units.filter(u => u.team === PLAYER && u.buffT > 0).length,
+      fatigued: S.units.filter(u => u.team === PLAYER && u.fatigueT > 0 && !(u.buffT > 0)).length,
+      milCalls: S.milStats ? S.milStats.calls : 0,
+      milMade: S.milStats ? S.milStats.made : 0,
+      sepMsMax: S.perf ? Math.round((S.perf.sepMsMax || 0) * 1000) / 1000 : 0,
+      sepMsMilMax: S.perf ? Math.round((S.perf.sepMsMilMax || 0) * 1000) / 1000 : 0,
+      riskPicks: S.crateStats ? S.crateStats.riskPicks : 0,
+      riskSpawns: S.crateStats ? S.crateStats.riskSpawns : 0,
       militiaHp: (S.units.find(u => u.team === PLAYER && u.militiaT > 0) || {}).hp || 0,
       cratePicksFree: S.crateStats ? S.crateStats.picksFree : 0,
       cursedCrates: S.crates.filter(c => c.curse).length,
@@ -6014,6 +6041,17 @@ const militiaSpec = params.get('militia');
 if (militiaSpec && S.mode === 'playing') {
   for (const u of S.units.filter(x => x.team === PLAYER && x.type === 'peasant')) S.selected.push(u);
   tryMilitia();
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const garrisonTest = params.get('garrisontest');
+if (garrisonTest && S.mode === 'playing') {
+  const house = S.buildings.find(b => b.team === PLAYER && (b.type === 'house' || b.type === 'cathedral'));
+  const list = S.units.filter(u => u.team === PLAYER && ['spearman', 'swordsman', 'archer'].includes(u.type)).slice(0, 3);
+  if (house && list.length) {
+    house.garrison = list.slice();
+    for (const u of list) u.garrisoned = house.id;
+    ungarrison(house);
+  }
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
