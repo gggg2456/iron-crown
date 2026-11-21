@@ -17,6 +17,7 @@ const ORIGIN = MAP * HW;
 const PLAYER = 'player', ENEMY = 'enemy', ALLY = 'ally';
 
 const CAMPAIGN_GOLD = 1200;
+/* ===== 1. DATA TABLES ===== */
 const DIFFS = {
   squire: { first: 70, every: 65, base: 2, grow: 1.0, train: 19, max: 14 },
   knight: { first: 55, every: 50, base: 3, grow: 1.3, train: 16, max: 18 },
@@ -210,6 +211,17 @@ const U = {
   }
 };
 
+// 战斗加成表：数值全部集中在这里，逻辑只读字段，不写死兵种类型判断。
+const UNIT_BONUS = {
+  crossbowman: { vsBuilding: 1.15 },
+  catapult:    { vsBuilding: 1.8 },
+  scorpion:    { vsUnit: 1.2 },
+  spearman:    { vsCavalry: 1.6 },
+  halberdier:  { vsCavalry: 1.4, vsBuilding: 1.4 },
+  ram:         { vsBuilding: 2.6 },
+  knight:      { vsBuilding: 1.25 }
+};
+const CAVALRY_TYPES = new Set(['knight', 'lancer']);
 const TABS = {
   build: ['house', 'barracks', 'market', 'mill', 'armory', 'workshop', 'forge', 'cathedral', 'sunAltar', 'stormSpire', 'plagueWell', 'drumTower'],
   units: ['peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'halberdier', 'priest', 'dog', 'lancer', 'javelineer'],
@@ -484,6 +496,7 @@ const fogCtx = fogCanvas.getContext('2d');
 let DPR = Math.min(2, window.devicePixelRatio || 1);
 let VW = innerWidth, VH = innerHeight;
 
+/* ===== 2. GAME STATE ===== */
 const S = {
   mode: 'menu', paused: false, diffKey: 'knight', time: 0,
   gold: 400, uid: 1,
@@ -496,7 +509,7 @@ const S = {
   keys: {},
   prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
   buildQ: { cur: null, queue: [] },
-  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0 }, pathBudget: 4, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -518,6 +531,7 @@ const S = {
   tour: null
 };
 
+/* ===== 3. UTILITIES ===== */
 /* ------------- utility ------------- */
 function hash(x, y) {
   let h = x * 374761393 + y * 668265263;
@@ -1078,6 +1092,7 @@ function spawnSkirmishStart() {
   }
 }
 
+/* ===== 6. ECONOMY & BUILD ===== */
 function resetWorld() {
   seed = seeded(0x51C0FFEE + S.diffKey.length * 7717 + S.campaignLevel * 104729);
   refreshUnlocked();
@@ -1089,6 +1104,8 @@ function resetWorld() {
   S.placing = null; S.drag = null; S.time = 0;
   S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
   S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
+  S.perf = { path: 0, sep: 0 };
+  S.pathBudget = 4;
   S.buildQ = { cur: null, queue: [] };
   S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.enemySuper = null; S.radar = false;
   S.stats = { kills: 0, losses: 0, gathered: 0 };
@@ -1565,6 +1582,7 @@ function pushOutOfBuildings(u) {
     else if (m === d3) u.y = y1; else u.y = y2;
   }
 }
+/* ===== 4. PATHFINDING ===== */
 function walkBlocked(tx, ty, r) {
   const x = tx + .5, y = ty + .5;
   if (terrainAt(x, y) === 'water') return true;
@@ -1700,21 +1718,37 @@ function findPath(sx, sy, tx, ty, r) {
 }
 function separateUnits() {
   const list = S.units.filter(u => u.hp > 0 && !u.garrisoned && u.type !== 'baseVehicle');
-  for (let i = 0; i < list.length; i++) {
-    for (let j = i + 1; j < list.length; j++) {
-      const a = list[i], b = list[j];
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const d = Math.hypot(dx, dy);
-      const min = unitRadius(a) + unitRadius(b);
-      if (d >= min) continue;
-      if (d < .0001) {
-        a.x -= .02; b.x += .02;
-        continue;
+  const CELL = 2, grid = new Map();
+  for (const u of list) {
+    const k = ((u.x / CELL) | 0) + ',' + ((u.y / CELL) | 0);
+    let cell = grid.get(k);
+    if (!cell) { cell = []; grid.set(k, cell); }
+    cell.push(u);
+  }
+  const offsets = [[0, 0], [1, 0], [1, 1], [0, 1], [-1, 1]];
+  for (const [key, cell] of grid) {
+    const parts = key.split(',');
+    const cx = +parts[0], cy = +parts[1];
+    for (const [ox, oy] of offsets) {
+      const same = ox === 0 && oy === 0;
+      const other = same ? cell : grid.get((cx + ox) + ',' + (cy + oy));
+      if (!other) continue;
+      for (let i = 0; i < cell.length; i++) {
+        const a = cell[i];
+        for (let j = same ? i + 1 : 0; j < other.length; j++) {
+          const b = other[j];
+          S.perf.sep++;
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const d = Math.hypot(dx, dy);
+          const min = unitRadius(a) + unitRadius(b);
+          if (d >= min) continue;
+          if (d < .0001) { a.x -= .02; b.x += .02; continue; }
+          const push = (min - d) * .55;
+          const nx = dx / d, ny = dy / d;
+          a.x -= nx * push; a.y -= ny * push;
+          b.x += nx * push; b.y += ny * push;
+        }
       }
-      const push = (min - d) * .55;
-      const nx = dx / d, ny = dy / d;
-      a.x -= nx * push; a.y -= ny * push;
-      b.x += nx * push; b.y += ny * push;
     }
   }
   for (const u of list) {
@@ -1730,7 +1764,9 @@ function moveTowards(u, tx, ty, dt, stop = 0) {
   if (u.path && u.path.length) {
     while (u.path.length > 1 && Math.hypot(u.x - u.path[0].x, u.y - u.path[0].y) < .5) u.path.shift();
     gx = u.path[0].x; gy = u.path[0].y;
-  } else if (!u.path && lineBlocked(u, tx, ty)) {
+  } else if (!u.path && S.pathBudget > 0 && lineBlocked(u, tx, ty)) {
+    S.pathBudget--;
+    S.perf.path++;
     const p = findPath(u.x, u.y, tx, ty, unitRadius(u));
     if (p && p.length) {
       u.path = p; u.pathGoal = { x: tx, y: ty };
@@ -1842,15 +1878,16 @@ function orderMove(u, x, y) {
 function orderAttack(u, target) {
   u.order = { type: 'attack', target }; u.target = target; u.gather = null;
 }
+/* ===== 5. COMBAT ===== */
 function faceUnit(u, target) {
   const p1 = mapPos(u.x, u.y), p2 = mapPos(target.x, target.y);
   if (Math.abs(p2.x - p1.x) > .01) u.facing = p2.x >= p1.x ? 1 : -1;
 }
 function shoot(u, target, dmg, team) {
   let power = (dmg || U[u.type].dmg) * (team === ENEMY ? (S.enemyMods?.dmg || 1) : 1) * (u.buffDmg || 1);
-  if (u.type === 'crossbowman' && target.kind === 'building') power *= 1.15;
-  if (u.type === 'catapult' && target.kind === 'building') power *= 1.8;
-  if (u.type === 'scorpion' && target.kind === 'unit') power *= 1.2;
+  const bonus = UNIT_BONUS[u.type] || {};
+  if (target.kind === 'building' && bonus.vsBuilding) power *= bonus.vsBuilding;
+  if (target.kind === 'unit' && bonus.vsUnit) power *= bonus.vsUnit;
   if (team === PLAYER) power *= techDmgMul(u);
   if (u.type === 'catapult') {
     spawnBoulder(u.x, u.y, U[u.type].h * .72, target, power, team, u);
@@ -1885,14 +1922,14 @@ function engage(u, target, dt) {
       u.attackAnim = .32;
       if (u.type === 'archer' || u.type === 'crossbowman' || u.type === 'scorpion' || u.type === 'catapult' || u.type === 'priest' || u.type === 'shaman' || u.type === 'tower' || u.type === 'keep') shoot(u, target, U[u.type] ? U[u.type].dmg : B[u.type].attack.dmg, u.team);
       else {
+        const mBonus = UNIT_BONUS[u.type] || {};
         let mul = 1;
-        if (u.type === 'spearman' && target.type === 'knight') mul *= 1.6;
-        if (u.type === 'halberdier' && (target.type === 'knight' || target.kind === 'building')) mul *= 1.4;
-        if (u.type === 'ram' && target.kind === 'building') mul *= 2.6;
+        if (mBonus.vsCavalry && target.kind === 'unit' && CAVALRY_TYPES.has(target.type)) mul *= mBonus.vsCavalry;
+        if (target.kind === 'building' && mBonus.vsBuilding) mul *= mBonus.vsBuilding;
         if (u.team === PLAYER) mul *= techDmgMul(u);
-        damage(target, U[u.type].dmg * mul * (u.team === ENEMY ? (S.enemyMods?.dmg || 1) : 1) * (target.kind === 'building' && u.type === 'knight' ? 1.25 : 1), u);
+        damage(target, U[u.type].dmg * mul * (u.team === ENEMY ? (S.enemyMods?.dmg || 1) : 1), u);
         if (u.type === 'hero' && u.cleaveCd <= 0) {
-          u.cleaveCd = 8;
+          u.cleaveCd = U.hero.cleaveEvery || 8;
           heroCleave(u, target);
         }
         Sound.play('sword');
@@ -2598,6 +2635,7 @@ function launchWave() {
   toast(`黑鸦第 ${S.wave.n} 波攻势：${desired} 名敌军离开要塞`, 'warn', 'shield');
   S.wave.timer = Math.max(26, diff.every + (L.everyAdd || 0) - S.wave.n * 1.5);
 }
+/* ===== 7. AI ===== */
 function updateAI(dt) {
   if (S.tutorial) return;
   const diff = DIFFS[S.diffKey];
@@ -2897,6 +2935,7 @@ function updateAllyAI(dt) {
 /* ------------- game update ------------- */
 function update(dt) {
   S.time += dt;
+  S.pathBudget = 4;
   if (S.run === 'skirmish') {
     S.wave.timer -= dt;
     if (S.wave.timer <= 0) launchWave();
@@ -2916,7 +2955,7 @@ function update(dt) {
   updateParticles(dt);
   solveOverlap();
   separateUnits();
-  for (const u of S.units) pushOutOfBuildings(u);
+  for (const u of S.units) if (u.type === 'baseVehicle') pushOutOfBuildings(u);
   updateTraining(dt);
   updateConstruction(dt);
   updateTutorial(dt);
@@ -2931,6 +2970,7 @@ function update(dt) {
   if (S.hover && S.hover.type !== 'unit') S.hover = null;
 }
 /* ------------- rendering ------------- */
+/* ===== 8. RENDERING ===== */
 function drawPoly(g, pts, fill, stroke = null, lw = 1) {
   g.beginPath(); g.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
@@ -4084,6 +4124,7 @@ function render(now) {
 }
 
 /* ------------- UI ------------- */
+/* ===== 9. UI & INPUT ===== */
 const els = {
   gold: $('#gold-value'), pop: $('#pop-value'), army: $('#army-value'),
   wave: $('#wave-timer'), waveChip: $('#wave-chip'),
@@ -5413,6 +5454,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+/* ===== 10. BOOT & DEBUG ===== */
 /* ------------- boot ------------- */
 document.body.classList.add('menu-mode');
 resize();
@@ -5498,6 +5540,8 @@ if (params.get('debug') === '1') {
       tutorial: S.tutorial, tutStep: S.tutStep, faction: S.faction, miniCd: Math.round(S.miniCd),
       superKey: S.superKey,
       tab: S.tab,
+      perfPath: S.perf ? S.perf.path : 0,
+      perfSep: S.perf ? S.perf.sep : 0,
       keyLog: window.__keyLog || [],
       buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
       enemySuper: !!S.enemySuper,
