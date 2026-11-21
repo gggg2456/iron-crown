@@ -18,7 +18,9 @@ const PLAYER = 'player', ENEMY = 'enemy', ALLY = 'ally';
 
 const CAMPAIGN_GOLD = 1200;
 // AI 进度表：AI 没有金币经济，只用时间门槛控制发育节奏（三档难度可再分档）
-const AI_PACE = { barracksAt: 10, workshopAt: 90, superAt: 180, trainMul: 1.35 };
+// trainMul 是「训练间隔倍率」：1.0 = 与玩家同速；>1 = 更慢。先保持 1.0，只靠建筑延迟控制节奏。
+// superDelay 是「工坊建成后再等多少秒」才允许造超武，而不是从开局算。
+const AI_PACE = { barracksAt: 10, workshopAt: 90, superDelay: 90, trainMul: 1.0 };
 // 农民征召：临时民兵（不花金币，征召期不产金，20 秒后自动复原，最多同时 3 个）
 const MILITIA = { dmg: 8, hp: 100, range: 1.2, time: 20, max: 3 };
 /* ===== 1. DATA TABLES ===== */
@@ -575,7 +577,7 @@ const S = {
   keys: {},
   prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
   buildQ: { cur: null, queue: [] },
-  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, aiTimes: {}, aiTrace: [], crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 }, milStats: { calls: 0, made: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null, shakeOn: true, shake: 0,
+  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, aiTimes: {}, aiTrace: [], crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 }, milStats: { calls: 0, made: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null, shakeOn: false, shake: 0,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -2190,7 +2192,8 @@ function damage(target, amount, source) {
   target.flash = .14;
   target.lastHurt = S.time;
   if (target.kind === 'unit' && S.shakeOn) S.shake = Math.min(2.2, (S.shake || 0) + .5);
-  if (target.kind === 'unit' && amount >= 1 && S.floats.length < 26 && Math.random() < .3) {
+  if (target.kind === 'unit' && amount >= 1 && S.floats.length < 26 && S.time - (target.lastDmgText || 0) > .5) {
+    target.lastDmgText = S.time;
     floatText(target.x, target.y - .6, String(Math.max(1, Math.round(amount))), target.team === PLAYER ? '#ff9d8f' : '#ffe39a');
   }
   if (target.kind === 'unit' && amount > 0 && Math.random() < .34) Voice.play('hit', target);
@@ -2931,6 +2934,7 @@ function tryBuildEnemyWorkshop() {
       if (!canPlace('workshop', tx, ty, { ignoreBuildRadius: true })) continue;
       const b = addBuilding('workshop', tx, ty, ENEMY);
       b.constructed = true; b.progress = 1;
+      b.builtAt = S.time;
       burst(b.x, b.y, 'dust', 18);
       return true;
     }
@@ -2939,8 +2943,9 @@ function tryBuildEnemyWorkshop() {
 }
 function tryBuildEnemySuperBuilding() {
   if (S.run !== 'skirmish') return false;
-  if (S.time < AI_PACE.superAt) return false;
-  if (!S.buildings.some(b => b.team === ENEMY && b.type === 'workshop' && b.hp > 0 && !b.dead)) return false;
+  const ws = S.buildings.find(b => b.team === ENEMY && b.type === 'workshop' && b.hp > 0 && !b.dead);
+  if (!ws) return false;
+  if (S.time < (ws.builtAt || 0) + AI_PACE.superDelay) return false;
   if (!S.supersEnabled) return false;
   if (!S.enemySuper || S.enemySuper.built) return false;
   const sup = SUPERS[S.enemySuper.key];

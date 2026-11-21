@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.4.3：手感第一批（伤害数字 / 选择圈阵营描边 / 屏幕震动 / 完成闪光）\n\n- 伤害数字节流（≤26 条）、受击闪白沿用\n- 单位脚下阵营色圆环，选中加粗\n- 屏幕震动 1~2px，暂停菜单可关\n- 建造/训练完成时对应卡片闪金光\n- 核对：落地阴影与高 DPI 之前已实现",
-  "releaseName": "铁与王冠 v1.4.3 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.4.3 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.3 改动\n\n- 伤害数字、选择圈与阵营色描边、屏幕震动（可关）、完成闪光\n- 落地阴影与高 DPI 之前已存在\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "v1.4.4：AI 参数定方向 + 手感微调\n\n- trainMul 方向确认：训练间隔倍率，1.0=同速，>1=更慢；v1.4.2 的 1.35 实为慢 35%，本版改回 1.0\n- superDelay 改为工坊建成后 90 秒（工坊拆后重建重新计时）\n- 实测：兵营 10s、工坊 91s、超武 182s；90s 时 AI 已 22 单位（无等超武空窗）\n- 伤害数字改为每单位 0.5s 节流；屏幕震动默认关闭",
+  "releaseName": "铁与王冠 v1.4.4 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.4.4 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.4 改动\n\n- trainMul 改回 1.0（只保留建筑延迟）\n- 超武改为工坊建成后 90 秒\n- 伤害数字按单位 0.5 秒节流，屏幕震动默认关闭\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
