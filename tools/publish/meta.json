@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.4.4：AI 参数定方向 + 手感微调\n\n- trainMul 方向确认：训练间隔倍率，1.0=同速，>1=更慢；v1.4.2 的 1.35 实为慢 35%，本版改回 1.0\n- superDelay 改为工坊建成后 90 秒（工坊拆后重建重新计时）\n- 实测：兵营 10s、工坊 91s、超武 182s；90s 时 AI 已 22 单位（无等超武空窗）\n- 伤害数字改为每单位 0.5s 节流；屏幕震动默认关闭",
-  "releaseName": "铁与王冠 v1.4.4 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.4.4 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.4 改动\n\n- trainMul 改回 1.0（只保留建筑延迟）\n- 超武改为工坊建成后 90 秒\n- 伤害数字按单位 0.5 秒节流，屏幕震动默认关闭\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "v1.4.5：卡建筑修复（放置校验 / A* 起点兜底 / 3 秒卡死传送）\n\n- A：玩家放置前检查单位，禁止埋人；AI 放置前把单位挪到最近空地\n- B：单位所在格 blocked 时先传送到最近非阻挡格再寻路\n- C：blocked 单位推挤后仍卡则弹出\n- 兜底：有指令 + 3 秒位移 <0.06 + blocked → 传送到最近空地，stuckTeleports 计数\n实测：强制埋人 1 秒内弹出、stuckList 为空；绕房 moveDist=0.1；正常放置不受影响",
+  "releaseName": "铁与王冠 v1.4.5 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.4.5 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.5 改动\n\n- 修复单位卡在建筑上的问题：放置校验、A* 起点兜底、卡死 3 秒自动传送\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }

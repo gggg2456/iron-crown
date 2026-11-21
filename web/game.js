@@ -1670,6 +1670,19 @@ function pushOutOfBuildings(u) {
   }
 }
 /* ===== 4. PATHFINDING ===== */
+function nearestFreeSpot(x, y, r, rad) {
+  const radius = rad === undefined ? .34 : rad;
+  for (let ring = 1; ring <= (r || 4); ring++) {
+    for (let a = 0; a < 16; a++) {
+      const ang = a * Math.PI / 8;
+      const nx = x + Math.cos(ang) * ring * .9;
+      const ny = y + Math.sin(ang) * ring * .9;
+      if (nx < .4 || ny < .4 || nx > MAP - .4 || ny > MAP - .4) continue;
+      if (!walkBlocked(Math.floor(nx), Math.floor(ny), radius)) return { x: nx, y: ny };
+    }
+  }
+  return null;
+}
 function walkBlocked(tx, ty, r) {
   const x = tx + .5, y = ty + .5;
   if (terrainAt(x, y) === 'water') return true;
@@ -1852,6 +1865,13 @@ function moveTowards(u, tx, ty, dt, stop = 0) {
     while (u.path.length > 1 && Math.hypot(u.x - u.path[0].x, u.y - u.path[0].y) < .5) u.path.shift();
     gx = u.path[0].x; gy = u.path[0].y;
   } else if (!u.path) {
+    if (walkBlocked(Math.floor(u.x), Math.floor(u.y), unitRadius(u))) {
+      const free = nearestFreeSpot(u.x, u.y, 4, unitRadius(u));
+      if (free) {
+        u.x = free.x; u.y = free.y; u.path = null;
+        S.stuckTeleports = (S.stuckTeleports || 0) + 1;
+      }
+    }
     if (S.time < (u.pathRetryAt || 0)) {
       // 重算冷却中：这一帧不做直线检测，直接沿旧方向走
       S.perf.pathCool++;
@@ -2051,6 +2071,20 @@ function engage(u, target, dt) {
   }
 }
 function updateUnit(u, dt) {
+  const _md = Math.hypot(u.x - (u._lx === undefined ? u.x : u._lx), u.y - (u._ly === undefined ? u.y : u._ly));
+  u._lx = u.x; u._ly = u.y;
+  u.dbgBlocked = walkBlocked(Math.floor(u.x), Math.floor(u.y), unitRadius(u));
+  if (u.order && _md < .02) u.stillT = (u.stillT || 0) + dt; else u.stillT = 0;
+  if (u.stillT > 3) {
+    u.stillT = 0;
+    if (u.dbgBlocked) {
+      const free = nearestFreeSpot(u.x, u.y, 4, unitRadius(u));
+      if (free) {
+        u.x = free.x; u.y = free.y; u.path = null; u.pathGoal = null;
+        S.stuckTeleports = (S.stuckTeleports || 0) + 1;
+      }
+    }
+  }
   u.attackCd -= dt;  u.flash = Math.max(0, u.flash - dt);
   if (u.fatigueT > 0) u.fatigueT -= dt;
   if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 9);
@@ -2699,6 +2733,12 @@ function canPlace(type, tx, ty, opts = {}) {
     }
   }
   if (!opts.ignoreBuildRadius && !withinBuildRadius(type, tx, ty)) return false;
+  if (!opts.ignoreUnits) {
+    for (const u of S.units) {
+      if (u.hp <= 0 || u.garrisoned) continue;
+      if (u.x > tx - .3 && u.x < tx + d.w + .3 && u.y > ty - .3 && u.y < ty + d.d + .3) return false;
+    }
+  }
   return true;
 }
 function placeBuilding() {
@@ -2904,6 +2944,14 @@ function updateEnemySuper(dt) {
   S.enemySuper.timer -= dt;
   if (S.enemySuper.timer <= 0) castEnemySuper();
 }
+function nudgeUnitsOut(tx, ty, w, d) {
+  for (const u of S.units) {
+    if (u.hp <= 0 || u.garrisoned) continue;
+    if (!(u.x > tx - .4 && u.x < tx + w + .4 && u.y > ty - .4 && u.y < ty + d + .4)) continue;
+    const free = nearestFreeSpot(u.x, u.y, 4);
+    if (free) { u.x = free.x; u.y = free.y; u.path = null; u.pathGoal = null; }
+  }
+}
 function tryBuildEnemyBarracks() {
   if (S.time < AI_PACE.barracksAt) return false;
   if (S.buildings.some(b => b.team === ENEMY && b.type === 'barracks' && b.hp > 0 && !b.dead)) return true;
@@ -2913,7 +2961,8 @@ function tryBuildEnemyBarracks() {
     for (let a = 0; a < 16; a++) {
       const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 2);
       const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 2);
-      if (!canPlace('barracks', tx, ty, { ignoreBuildRadius: true })) continue;
+      if (!canPlace('barracks', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+      nudgeUnitsOut(tx, ty, 2, 2);
       const b = addBuilding('barracks', tx, ty, ENEMY);
       b.constructed = true; b.progress = 1;
       burst(b.x, b.y, 'dust', 14);
@@ -2931,7 +2980,8 @@ function tryBuildEnemyWorkshop() {
     for (let a = 0; a < 16; a++) {
       const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 2), 0, MAP - 3);
       const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 2), 0, MAP - 3);
-      if (!canPlace('workshop', tx, ty, { ignoreBuildRadius: true })) continue;
+      if (!canPlace('workshop', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+      nudgeUnitsOut(tx, ty, 3, 3);
       const b = addBuilding('workshop', tx, ty, ENEMY);
       b.constructed = true; b.progress = 1;
       b.builtAt = S.time;
@@ -2961,7 +3011,8 @@ function tryBuildEnemySuperBuilding() {
     for (let a = 0; a < 16; a++) {
       const tx = clamp(Math.round(anchor.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 2);
       const ty = clamp(Math.round(anchor.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 2);
-      if (!canPlace(type, tx, ty, { ignoreBuildRadius: true })) continue;
+      if (!canPlace(type, tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+      nudgeUnitsOut(tx, ty, B[type].w, B[type].d);
       const b = addBuilding(type, tx, ty, ENEMY);
       b.constructed = true; b.progress = 1;
       burst(b.x, b.y, 'dust', 14);
@@ -5942,6 +5993,8 @@ if (params.get('debug') === '1') {
       sepMsMilMax: S.perf ? Math.round((S.perf.sepMsMilMax || 0) * 1000) / 1000 : 0,
       riskPicks: S.crateStats ? S.crateStats.riskPicks : 0,
       dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
+      stuckTeleports: S.stuckTeleports || 0,
+      stuckList: S.units.filter(u => u.team === PLAYER && u.order && (u.stillT || 0) > 1.5 && u.dbgBlocked).map(u => ({ type: u.type, still: Math.round((u.stillT || 0) * 10) / 10, blocked: !!u.dbgBlocked, order: u.order && u.order.type })),
       aiTimes: S.aiTimes || {},
       aiTrace: S.aiTrace || [],
       dogBonusCrates: S.crates.filter(c => c.dogBonus).length,
@@ -6148,6 +6201,17 @@ if (dogTest === '1' && S.mode === 'playing') {
   if (keep) {
     addUnit('dog', PLAYER, keep.x + 9, keep.y + 9);
     S.crates.push({ x: keep.x + 9, y: keep.y + 9, kind: 'gold', phase: 0, life: 60 });
+  }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const burySpec = params.get('bury');
+if (burySpec === '1' && S.mode === 'playing') {
+  const u = S.units.find(x => x.team === PLAYER && x.type !== 'peasant');
+  if (u) {
+    const tx = Math.max(0, Math.floor(u.x) - 1), ty = Math.max(0, Math.floor(u.y) - 1);
+    // 调试：强制埋人，跳过放置校验
+    const hb = addBuilding('house', tx, ty, PLAYER);
+    hb.constructed = true; hb.progress = 1;
   }
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
