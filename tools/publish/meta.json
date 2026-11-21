@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "铁与王冠 v1.3.3：观测基线 + 拾箱三个确认\n\n确认1：crateLog 记的是派工不是拾取；新增 scans/dispatches/aborts(原因)/picks 分开计数\n确认2：crateRun 是每单位字段；新增超时（直线距离/最慢速度×2），超时清状态并允许重派\n确认3：放弃阈值改为交火距离（射程+1.2），不再用 aggro/视野\n基线：40 单位国王难度 pathDefPct 11.7% → 加 0.4s 重算冷却后 0.6%；pushChecks≈7.5万、pushMs≈0.001ms/帧",
-  "releaseName": "铁与王冠 v1.3.3 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.3.3 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.3.3 改动（以观测为主）\n\n- **拾箱三个确认**：派工/拾取分开计数；crateRun 超时（距离/最慢速度×2）；放弃阈值改为交火距离（射程+1.2）\n- **路径基线**：40 单位国王难度沿旧路径占比 11.7% → 加 0.4 秒重算冷却后 **0.6%**\n- **推挤基线**：`pushChecks≈7.5万`、`pushMs≈0.001 ms/帧`，建筑推挤不是瓶颈\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图）、小超武战鼓台、数字键切页、AI 抢箱\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "v1.4.0-A：FACTION_MODS 阵营系数层\n\n规则：最终值 = 基础表 × UNIT_BONUS × FACTION_MODS；百分比相乘、固定值相加\n实测：赤蔷薇长矛 154 血；青杉长弓射程 6.6；黑鸦长矛造价 60 / 移速 2.13；青杉长戟对骑 28×1.4×1.1=43.12\n口径：pushMsPerFrame 是单帧平均（累计毫秒/帧数）；perfSep 数的是网格分桶后被检查的单位对数",
+  "releaseName": "铁与王冠 v1.4.0 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.4.0 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.0 改动\n\n- FACTION_MODS 阵营系数层（其余两项见后续提交）\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }

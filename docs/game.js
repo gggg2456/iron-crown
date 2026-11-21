@@ -212,6 +212,65 @@ const U = {
 };
 
 // 战斗加成表：数值全部集中在这里，逻辑只读字段，不写死兵种类型判断。
+// ===== 阵营系数（FACTION_MODS） =====
+// 数值规则（写死，不要再改）：
+//   最终值 = 基础兵种表 × UNIT_BONUS（兵种特性） × FACTION_MODS（阵营系数）
+//   · 同类百分比相乘：长戟反骑 1.4 × 青杉伤害 1.1 = 1.54（不是 1.5）
+//   · 固定值（如射程 +1）在乘法链之后相加
+//   · 未写的字段按 1.0（固定值按 0）处理
+// 只在遭遇战生效；战役固定赤蔷薇、不吃阵营系数。
+const FACTION_MODS = {
+  rose:  {
+    meleeHpMul: 1.10, meleeDmgMul: 1.05,
+    gatherMul: 1.05
+  },
+  pine:  {
+    rangedRangeAdd: 1, dmgMul: 1.10,
+    towerHpMul: 1.20, buildSpeedMul: 1.10,
+    speedMul: 0.95, cavalrySpeedMul: 0.90
+  },
+  raven: {
+    meleeHpMul: 0.90, speedMul: 1.15, cavalrySpeedMul: 1.20,
+    trainSpeedMul: 1.10, gatherMul: 0.90,
+    typeCost: { spearman: 0.80 }
+  }
+};
+function factionMods() {
+  return (S.run === 'skirmish' && S.faction && FACTION_MODS[S.faction]) ? FACTION_MODS[S.faction] : {};
+}
+function modVal(key, def) {
+  const v = factionMods()[key];
+  return typeof v === 'number' ? v : (def === undefined ? 1 : def);
+}
+function isMeleeType(type) { return U[type] ? U[type].range <= 2 : false; }
+function unitHpFactionMul(type) {
+  return modVal('hpMul') * (isMeleeType(type) ? modVal('meleeHpMul') : 1);
+}
+function unitDmgFactionMul(type) {
+  return modVal('dmgMul') * (isMeleeType(type) ? modVal('meleeDmgMul') : 1);
+}
+function unitSpeedFactionMul(type) {
+  return modVal('speedMul') * (CAVALRY_TYPES.has(type) ? modVal('cavalrySpeedMul') : 1);
+}
+function unitRangeFactionAdd(type) {
+  return isMeleeType(type) ? 0 : modVal('rangedRangeAdd', 0);
+}
+function unitCostFaction(type) {
+  const base = U[type] ? U[type].cost : (B[type] ? B[type].cost : 0);
+  const per = (factionMods().typeCost || {})[type] || 1;
+  return Math.round(base * modVal('costMul') * per);
+}
+function buildingCostFaction(type) {
+  return Math.round((B[type] ? B[type].cost : 0) * modVal('buildCostMul'));
+}
+function buildSecondsFaction(type) {
+  return (BUILD_TIME[type] || 4) / modVal('buildSpeedMul');
+}
+function trainSecondsFaction(type) {
+  return (U[type] ? U[type].time : 1) / modVal('trainSpeedMul');
+}
+function gatherFactionMul() { return modVal('gatherMul'); }
+
 const UNIT_BONUS = {
   crossbowman: { vsBuilding: 1.15 },
   catapult:    { vsBuilding: 1.8 },
@@ -509,7 +568,7 @@ const S = {
   keys: {},
   prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
   buildQ: { cur: null, queue: [] },
-  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -995,7 +1054,8 @@ let seed = seeded(1337);
 
 function addBuilding(type, tx, ty, team) {
   const d = B[type];
-  const hp = team === ENEMY ? Math.round(d.hp * (1 + ((S.enemyMods?.hp || 1) - 1) * .55)) : d.hp;
+  let hp = team === ENEMY ? Math.round(d.hp * (1 + ((S.enemyMods?.hp || 1) - 1) * .55)) : d.hp;
+  if (team === PLAYER && ['tower', 'wall', 'ballista', 'watchtower'].includes(type)) hp = Math.round(hp * modVal('towerHpMul'));
   const b = {
     id: S.uid++, kind: 'building', type, team, tx, ty, w: d.w, d: d.d,
     x: tx + d.w / 2, y: ty + d.d / 2, hp, maxHp: hp, rally: null,
@@ -1010,7 +1070,7 @@ function addBuilding(type, tx, ty, team) {
 }
 function addUnit(type, team, x, y) {
   const d = U[type];
-  let hp = team === ENEMY ? Math.round(d.hp * (S.enemyMods?.hp || 1)) : team === ALLY ? d.hp : Math.round(d.hp * playerHpMul(type));
+  let hp = team === ENEMY ? Math.round(d.hp * (S.enemyMods?.hp || 1)) : team === ALLY ? d.hp : Math.round(d.hp * playerHpMul(type) * unitHpFactionMul(type));
   const u = {
     id: S.uid++, kind: 'unit', type, team, x, y,
     hp, maxHp: hp, order: null, target: null,
@@ -1105,7 +1165,7 @@ function resetWorld() {
   S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
   S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
   S.perf = { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 };
-  S.crateStats = { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0 };
+  S.crateStats = { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0 };
   S.crateAborts = { combat: 0, gone: 0, timeout: 0 };
   S.pathBudget = 4;
   S.buildQ = { cur: null, queue: [] };
@@ -1530,7 +1590,8 @@ function updateGather(u, dt) {
     const p = approachPoint(u, drop, 1.15);
     if (Math.hypot(p.x - u.x, p.y - u.y) < 1.35) {
       const gain = Math.round(u.carrying * (1 + (S.tech.logistics ? .2 : 0)));
-      S.gold += gain; S.stats.gathered += gain;
+      const gGain = Math.round(gain * gatherFactionMul());
+  S.gold += gGain; S.stats.gathered += gGain;
       floatText(drop.x, drop.y, `+${gain}`, '#f4d37b');
       u.carrying = 0; Sound.play('coin'); updateHud(true);
     } else {
@@ -1793,7 +1854,7 @@ function moveTowards(u, tx, ty, dt, stop = 0) {
   const terr = terrainAt(u.x, u.y);
   const terrainSpeed = terr === 'marsh' ? .62 : terr === 'road' ? 1.25 : 1;
   const step = d > .0001 ? Math.min(d, U[u.type].speed * terrainSpeed * (u.slowT > 0 ? .55 : 1) * (u.buffSpd || 1)
-    * (u.team === ENEMY ? (S.enemyMods?.speed || 1) : (u.team === PLAYER ? techSpeedMul(u) : 1)) * dt) : 0;
+    * (u.team === ENEMY ? (S.enemyMods?.speed || 1) : (u.team === PLAYER ? techSpeedMul(u) * unitSpeedFactionMul(u.type) : 1)) * dt) : 0;
   let moved = false;
   if (step > .0001) {
     const nx = u.x + dx / d * step, ny = u.y + dy / d * step;
@@ -1895,6 +1956,15 @@ function orderAttack(u, target) {
   u.order = { type: 'attack', target }; u.target = target; u.gather = null; u.crateRun = null;
 }
 /* ===== 5. COMBAT ===== */
+function damageLayers(type, targetType) {
+  const base = U[type] ? U[type].dmg : 0;
+  const bonus = UNIT_BONUS[type] || {};
+  let bMul = 1;
+  if (bonus.vsCavalry && CAVALRY_TYPES.has(targetType)) bMul *= bonus.vsCavalry;
+  const fMul = unitDmgFactionMul(type);
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  return { base, unitBonus: r3(bMul), factionMul: r3(fMul), total: r3(base * bMul * fMul) };
+}
 function faceUnit(u, target) {
   const p1 = mapPos(u.x, u.y), p2 = mapPos(target.x, target.y);
   if (Math.abs(p2.x - p1.x) > .01) u.facing = p2.x >= p1.x ? 1 : -1;
@@ -1904,7 +1974,7 @@ function shoot(u, target, dmg, team) {
   const bonus = UNIT_BONUS[u.type] || {};
   if (target.kind === 'building' && bonus.vsBuilding) power *= bonus.vsBuilding;
   if (target.kind === 'unit' && bonus.vsUnit) power *= bonus.vsUnit;
-  if (team === PLAYER) power *= techDmgMul(u);
+  if (team === PLAYER) power *= techDmgMul(u) * unitDmgFactionMul(u.type);
   if (u.type === 'catapult') {
     spawnBoulder(u.x, u.y, U[u.type].h * .72, target, power, team, u);
     Sound.play('boom');
@@ -1928,7 +1998,7 @@ function heroCleave(u, target) {
 }
 function engage(u, target, dt) {
   if (!target || target.hp <= 0) { u.target = null; return; }
-  const range = U[u.type].range + (target.kind === 'building' ? .8 : 0);
+  const range = U[u.type].range + (u.team === PLAYER ? unitRangeFactionAdd(u.type) : 0) + (target.kind === 'building' ? .8 : 0);
   const d = distanceTo(u, target);
   faceUnit(u, target);
   if (d <= range) {
@@ -1942,7 +2012,7 @@ function engage(u, target, dt) {
         let mul = 1;
         if (mBonus.vsCavalry && target.kind === 'unit' && CAVALRY_TYPES.has(target.type)) mul *= mBonus.vsCavalry;
         if (target.kind === 'building' && mBonus.vsBuilding) mul *= mBonus.vsBuilding;
-        if (u.team === PLAYER) mul *= techDmgMul(u);
+        if (u.team === PLAYER) mul *= techDmgMul(u) * unitDmgFactionMul(u.type);
         damage(target, U[u.type].dmg * mul * (u.team === ENEMY ? (S.enemyMods?.dmg || 1) : 1), u);
         if (u.type === 'hero' && u.cleaveCd <= 0) {
           u.cleaveCd = U.hero.cleaveEvery || 8;
@@ -2360,14 +2430,15 @@ function tryTrain(type, n = 1) {
     return 0;
   }
   const cap = 12;
+  const cost = unitCostFaction(type);
   let added = 0;
   for (let i = 0; i < n; i++) {
     if (line.queue.length + (line.cur ? 1 : 0) >= cap) break;
     if (def.hero && (heroAlive() || heroInProduction())) break;
-    if (S.gold < def.cost) break;
+    if (S.gold < cost) break;
     if (popUsed() + prodReservedPop(cat) + def.pop > popCap()) break;
-    S.gold -= def.cost;
-    line.queue.push({ type, elapsed: 0, total: def.time, producer: pro.id });
+    S.gold -= cost;
+    line.queue.push({ type, elapsed: 0, total: trainSecondsFaction(type), producer: pro.id });
     added++;
   }
   if (!added) {
@@ -2440,9 +2511,10 @@ function queueBuilding(type) {
   }
   if (q.queue.length + (q.cur ? 1 : 0) >= 9) { toast('建造队列已满，等前面几座完工', 'warn', 'wall'); Sound.play('ui'); return; }
   const def = B[type];
-  if (S.gold < def.cost) { toast('金币不足', 'warn', 'coin'); Sound.play('ui'); return; }
-  S.gold -= def.cost;
-  const item = { type, elapsed: 0, total: BUILD_TIME[type] || 4, ready: false };
+  const bCost = buildingCostFaction(type);
+  if (S.gold < bCost) { toast('金币不足', 'warn', 'coin'); Sound.play('ui'); return; }
+  S.gold -= bCost;
+  const item = { type, elapsed: 0, total: buildSecondsFaction(type), ready: false };
   if (!q.cur) q.cur = item; else q.queue.push(item);
   toast(`${def.name}进入建造队列 · ${item.total} 秒`, '', 'wall');
   Sound.play('buildStart');
@@ -3505,6 +3577,20 @@ function nearestCrate(u, radius) {
   }
   return best;
 }
+function grantCrateAlly(c) {
+  let healed = 0;
+  for (const u of S.units) {
+    if (u.team !== ALLY || u.hp <= 0 || u.garrisoned) continue;
+    if (Math.hypot(u.x - c.x, u.y - c.y) > 7) continue;
+    if (u.hp >= u.maxHp) continue;
+    u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .2);
+    healed++;
+  }
+  floatText(c.x, c.y, '盟军拾取补给', '#9de0bd');
+  toast('青杉盟军捡走了奖励箱，治疗了周围友军', '', 'shield');
+  Sound.play('ui');
+  return healed;
+}
 function grantCrateEnemy(c) {
   let healed = 0;
   for (const u of S.units) {
@@ -3548,8 +3634,8 @@ function aiCrateTick(dt) {
     best.u.order = { type: 'move', x: best.c.x, y: best.c.y };
     best.u.crateRun = best.c;
     best.u.crateRunT = S.time;
-    const slow = Math.max(.6, Math.min(1, U[best.u.type].speed));
-    best.u.crateRunLimit = (Math.hypot(best.u.x - best.c.x, best.u.y - best.c.y) / slow) * 2;
+    const spd = Math.max(.6, U[best.u.type].speed);
+    best.u.crateRunLimit = (Math.hypot(best.u.x - best.c.x, best.u.y - best.c.y) / spd) * 2;
     S.crateStats.dispatches++;(S.crateLog = S.crateLog || []).push({ t: Math.round(S.time), id: best.u.id, type: best.u.type, idle: true });
     if (S.crateLog.length > 12) S.crateLog.shift();
   }
@@ -3566,8 +3652,10 @@ function updateCrates(dt) {
     for (const u of S.units) {
       if (u.garrisoned || u.hp <= 0) continue;
       if (Math.hypot(u.x - c.x, u.y - c.y) > 1.0) continue;
+      if (u.crateRun) { S.crateStats.picksDispatched++; u.crateRun = null; } else { S.crateStats.picksFree++; }
       if (u.team === PLAYER) { grantCrate(c); S.crateStats.picksPlayer++; }
       else if (u.team === ENEMY) { grantCrateEnemy(c); S.crateStats.picksEnemy++; }
+      else if (u.team === ALLY) { grantCrateAlly(c); S.crateStats.picksAlly++; }
       else continue;
       S.crates = S.crates.filter(x => x !== c);
       break;
@@ -5651,12 +5739,19 @@ if (params.get('debug') === '1') {
       crateScan: S.crateStats ? S.crateStats.scans : 0,
       crateDispatch: S.crateStats ? S.crateStats.dispatches : 0,
       crateAborts: S.crateStats ? S.crateStats.aborts : 0,
+      cratePicksDisp: S.crateStats ? S.crateStats.picksDispatched : 0,
+      cratePicksAlly: S.crateStats ? S.crateStats.picksAlly : 0,
+      cratePicksFree: S.crateStats ? S.crateStats.picksFree : 0,
+      crateInFlight: S.units.filter(u => u.team === ENEMY && u.crateRun && S.crates.includes(u.crateRun)).length,
+      crateBalanceOk: S.crateStats ? (S.crateStats.dispatches === S.crateStats.picksDispatched + S.crateStats.aborts + S.units.filter(u => u.team === ENEMY && u.crateRun && S.crates.includes(u.crateRun)).length) : true,
       crateAbortWhy: S.crateAborts || {},
       crateLog: S.crateLog || [],
       pathReq: S.perf ? S.perf.pathReq : 0,
       pathDef: S.perf ? S.perf.pathDef : 0,
       pathDefPct: S.perf && S.perf.pathReq ? Math.round(S.perf.pathDef / S.perf.pathReq * 1000) / 10 : 0,
       pathCool: S.perf ? S.perf.pathCool : 0,
+      dmgLog: window.__dmgLog || null,
+      fstat: window.__fstat || null,
       pathEffPct: S.perf && (S.perf.pathReq + S.perf.pathCool) ? Math.round(S.perf.pathDef / (S.perf.pathReq + S.perf.pathCool) * 1000) / 10 : 0,
       pushChecks: S.perf ? S.perf.pushChecks : 0,
       sepMsPerFrame: S.perf && S.perf.frames ? Math.round(S.perf.sepMs / S.perf.frames * 1000) / 1000 : 0,
@@ -5790,6 +5885,23 @@ if (spawnPlayerSpec && S.mode === 'playing') {
   const bits = spawnPlayerSpec.split(',').map(Number);
   const ek = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
   if (ek && isFinite(bits[0]) && isFinite(bits[1])) addUnit('spearman', PLAYER, ek.x + bits[0], ek.y + bits[1]);
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const dmgLogSpec = params.get('dmglog');
+if (dmgLogSpec && S.mode === 'playing') {
+  const bits = dmgLogSpec.split(':');
+  window.__dmgLog = damageLayers(bits[0], bits[1] || 'knight');
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const fstatSpec = params.get('fstat');
+if (fstatSpec && U[fstatSpec]) {
+  window.__fstat = {
+    type: fstatSpec,
+    hp: Math.round(U[fstatSpec].hp * playerHpMul(fstatSpec) * unitHpFactionMul(fstatSpec)),
+    cost: unitCostFaction(fstatSpec),
+    range: U[fstatSpec].range + unitRangeFactionAdd(fstatSpec),
+    speed: Math.round(U[fstatSpec].speed * unitSpeedFactionMul(fstatSpec) * 100) / 100
+  };
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
