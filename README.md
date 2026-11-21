@@ -237,7 +237,6 @@
 └─ tools/
    ├─ package.ps1        一键构建独立版 + 发布 zip
    ├─ build-pages.ps1    从 web/ 生成 docs/ 站点（已停用）
-   ├─ serve.ps1          静态文件服务器（端口 8765）
    └─ publish/           无 git 环境下的 REST 发布脚本（start-login / poller / push / meta）
 ```
 
