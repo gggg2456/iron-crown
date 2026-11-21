@@ -573,7 +573,7 @@ const S = {
   keys: {},
   prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
   buildQ: { cur: null, queue: [] },
-  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0 }, milStats: { calls: 0, made: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 }, milStats: { calls: 0, made: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -1170,7 +1170,7 @@ function resetWorld() {
   S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
   S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
   S.perf = { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 };
-  S.crateStats = { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0 };
+  S.crateStats = { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 };
   S.milStats = { calls: 0, made: 0 };
   S.crateAborts = { combat: 0, gone: 0, timeout: 0 };
   S.pathBudget = 4;
@@ -3602,6 +3602,11 @@ function spawnRaidAt(x, y, count) {
   Sound.play('boom');
 }
 function grantCrate(c) {
+  if (!c.curse && c.dogBonus) {
+    S.gold += c.dogBonus;
+    S.crateStats.dogPicks++;
+    floatText(c.x, c.y, '+' + c.dogBonus + ' 金币（猎犬）', '#f0d18a');
+  }
   if (c.curse) {
     S.crateStats.riskPicks++;
     S.gold += 800;
@@ -3727,6 +3732,21 @@ function aiCrateTick(dt) {
   }
 }
 function updateCrates(dt) {
+  // 猎犬首见宝箱：第一个进入视野的玩家单位决定是否有额外金币
+  for (const c of S.crates) {
+    if (c.seenBy || c.curse) continue;
+    for (const u of S.units) {
+      if (u.team !== PLAYER || u.hp <= 0 || u.garrisoned) continue;
+      const vision = VISION_U[u.type] || 6;
+      if (Math.hypot(u.x - c.x, u.y - c.y) > vision) continue;
+      c.seenBy = u.type;
+      if (u.type === 'dog') {
+        c.dogBonus = 50;
+        floatText(c.x, c.y, '猎犬嗅到额外金币', '#f0d18a');
+      }
+      break;
+    }
+  }
   S.crateTimer -= dt;
   if (S.crateTimer <= 0) {
     S.crateTimer = 45 + rnd(0, 25);
@@ -5857,6 +5877,8 @@ if (params.get('debug') === '1') {
       sepMsMax: S.perf ? Math.round((S.perf.sepMsMax || 0) * 1000) / 1000 : 0,
       sepMsMilMax: S.perf ? Math.round((S.perf.sepMsMilMax || 0) * 1000) / 1000 : 0,
       riskPicks: S.crateStats ? S.crateStats.riskPicks : 0,
+      dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
+      dogBonusCrates: S.crates.filter(c => c.dogBonus).length,
       riskSpawns: S.crateStats ? S.crateStats.riskSpawns : 0,
       militiaHp: (S.units.find(u => u.team === PLAYER && u.militiaT > 0) || {}).hp || 0,
       cratePicksFree: S.crateStats ? S.crateStats.picksFree : 0,
@@ -6051,6 +6073,15 @@ if (garrisonTest && S.mode === 'playing') {
     house.garrison = list.slice();
     for (const u of list) u.garrisoned = house.id;
     ungarrison(house);
+  }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const dogTest = params.get('dogtest');
+if (dogTest === '1' && S.mode === 'playing') {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  if (keep) {
+    addUnit('dog', PLAYER, keep.x + 9, keep.y + 9);
+    S.crates.push({ x: keep.x + 9, y: keep.y + 9, kind: 'gold', phase: 0, life: 60 });
   }
   if (window.__dbgUpdate) window.__dbgUpdate();
 }

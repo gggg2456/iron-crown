@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.4.1-1：驻军出击伏击加成\n\n规则：玩家手动点出击时，出城单位 3 秒 +20% 移速 / +15% 伤害，随后 10 秒疲惫 −10% 移速；建筑被毁/自动撤出不触发\n实测：出击后 ambush=3，5 秒后 ambush=0、fatigued=3",
+  "commitMessage": "v1.4.1-2：猎犬首见宝箱额外 +50 金\n\n规则：宝箱第一个进入视野的玩家单位若是猎犬，拾取时额外 +50 金；其它单位先到无加成\n实测：dogtest 场景 dogPicks=1、金币 2000→2263（50 + 213 宝箱）",
   "releaseName": "铁与王冠 v1.4.1 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.4.1 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.1 改动\n\n- 驻军出击伏击加成\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "releaseBody": "## 铁与王冠 v1.4.1 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.1 改动\n\n- **驻军出击伏击**：出城 3 秒 +20% 移速 / +15% 伤害，随后 10 秒疲惫\n- **猎犬首见宝箱**：猎犬第一个发现宝箱时，该箱额外 +50 金\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
