@@ -272,6 +272,14 @@ function unitCostFaction(type) {
 function buildingCostFaction(type) {
   return Math.round((B[type] ? B[type].cost : 0) * modVal('buildCostMul'));
 }
+function superHintOnce(type) {
+  if (S.superHinted) return;
+  const sup = Object.values(SUPERS).find(x => x.building === type);
+  if (!sup) return;
+  S.superHinted = true;
+  toast('超级武器已就绪：点击右下角图标，再点地图目标位置释放（Esc / 右键取消）', '', sup.icon);
+  Sound.play('horn');
+}
 function buildSecondsFaction(type) {
   return (BUILD_TIME[type] || 4) / modVal('buildSpeedMul');
 }
@@ -2762,6 +2770,7 @@ function placeBuilding() {
   b.progress = 1;
   burst(b.x, b.y, 'dust', 16);
   Sound.play('buildPlace');
+  superHintOnce(type);
   floatText(b.x, b.y, `${def.name}落成`, '#e8cf94');
   flashCard(type);
   toast(`${def.name}建造完成`, '', 'castle');
@@ -5528,6 +5537,7 @@ function onPointerDown(e) {
   }
   if (e.button === 2) {
     S.drag = null;
+    if (S.superAim) { S.superAim = false; canvas.style.cursor = 'default'; updateSuperUI(); return; }
     if (S.miniAim) { S.miniAim = false; canvas.style.cursor = 'default'; updateSuperUI(); return; }
     if (S.forceAim) { S.forceAim = false; canvas.style.cursor = 'default'; return; }
     const r = canvas.getBoundingClientRect();
@@ -5617,6 +5627,7 @@ function onPointerMove(e) {
   }
 }
 function onPointerUp(e) {
+  if (S.superAim || S.miniAim || S.forceAim) { S.drag = null; return; }
   if (S.panning) { S.panning = null; canvas.style.cursor = 'default'; return; }
   if (!S.drag) return;
   const d = S.drag;
@@ -5635,7 +5646,8 @@ function onPointerUp(e) {
   }
   if (hit && hit.type === 'unit' && hit.ref.team === PLAYER) selectAt(sx, sy, e.shiftKey);
   else if (hit && hit.type === 'building' && hit.ref.team === PLAYER) selectAt(sx, sy, false);
-  else if (S.selected.length) commandAt(sx, sy);
+  else if (hit && (hit.type === 'gold' || (hit.ref && hit.ref.team !== PLAYER))) commandAt(sx, sy);
+  else if (S.selected.length) clearSelection();
   else selectAt(sx, sy, e.shiftKey);
 }
 function onWheel(e) {
@@ -5994,6 +6006,7 @@ if (params.get('debug') === '1') {
       riskPicks: S.crateStats ? S.crateStats.riskPicks : 0,
       dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
       stuckTeleports: S.stuckTeleports || 0,
+      uiLog: S.uiLog || null,
       stuckList: S.units.filter(u => u.team === PLAYER && u.order && (u.stillT || 0) > 1.5 && u.dbgBlocked).map(u => ({ type: u.type, still: Math.round((u.stillT || 0) * 10) / 10, blocked: !!u.dbgBlocked, order: u.order && u.order.type })),
       aiTimes: S.aiTimes || {},
       aiTrace: S.aiTrace || [],
@@ -6212,6 +6225,31 @@ if (burySpec === '1' && S.mode === 'playing') {
     // 调试：强制埋人，跳过放置校验
     const hb = addBuilding('house', tx, ty, PLAYER);
     hb.constructed = true; hb.progress = 1;
+  }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const uiTest = params.get('uitest');
+if (uiTest === '1' && S.mode === 'playing') {
+  const rect = canvas.getBoundingClientRect();
+  let emptyPt = null;
+  for (let yy = 40; yy < 300 && !emptyPt; yy += 20) {
+    for (let xx = 40; xx < 500; xx += 20) {
+      if (!pickAt(xx, yy)) { emptyPt = { x: xx, y: yy }; break; }
+    }
+  }
+  S.uiLog = {};
+  if (emptyPt) {
+    S.selected = S.units.filter(u => u.team === PLAYER).slice(0, 3);
+    S.selectedBuilding = null;
+    S.drag = { sx: rect.left + emptyPt.x, sy: rect.top + emptyPt.y, active: false, add: false };
+    onPointerUp({ clientX: rect.left + emptyPt.x, clientY: rect.top + emptyPt.y, shiftKey: false });
+    S.uiLog.deselect = S.selected.length === 0;
+    S.selected = S.units.filter(u => u.team === PLAYER).slice(0, 3);
+    const before = S.selected.length;
+    S.superKey = 'fire'; S.superCd = 0; S.superAim = true;
+    onPointerDown({ button: 0, clientX: rect.left + emptyPt.x, clientY: rect.top + emptyPt.y, shiftKey: false, preventDefault() {} });
+    S.uiLog.superReleased = S.superCd > 0;
+    S.uiLog.selectionKept = S.selected.length === before;
   }
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
