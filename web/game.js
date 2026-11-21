@@ -509,7 +509,7 @@ const S = {
   keys: {},
   prod: { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } },
   buildQ: { cur: null, queue: [] },
-  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0 }, pathBudget: 4, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
+  faction: 'rose', tutorial: false, tutStep: 0, miniCd: 0, miniAim: false, perf: { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 }, pathBudget: 4, crateStats: { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0 }, crateAborts: { combat: 0, gone: 0, timeout: 0 }, lastWin: false, tech: {}, superCd: 0, superKey: null, superAim: false, forceAim: false, enemySuper: null,
   radar: false,
   campaignLevel: 0, enemyMods: { hp: 1, dmg: 1, speed: 1 },
   run: 'campaign', supersEnabled: true, skirmish: null,
@@ -1104,8 +1104,9 @@ function resetWorld() {
   S.placing = null; S.drag = null; S.time = 0;
   S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
   S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
-  S.perf = { path: 0, sep: 0 };
-  S.crateStats = { player: 0, enemy: 0 };
+  S.perf = { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 };
+  S.crateStats = { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0 };
+  S.crateAborts = { combat: 0, gone: 0, timeout: 0 };
   S.pathBudget = 4;
   S.buildQ = { cur: null, queue: [] };
   S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.enemySuper = null; S.radar = false;
@@ -1575,6 +1576,7 @@ function pushOutOfBuildings(u) {
   if (u.garrisoned) return;
   const r = unitRadius(u) + .08;
   for (const b of S.buildings) {
+    S.perf.pushChecks++;
     const x1 = b.tx - r, x2 = b.tx + b.w + r, y1 = b.ty - r, y2 = b.ty + b.d + r;
     if (u.x <= x1 || u.x >= x2 || u.y <= y1 || u.y >= y2) continue;
     const d1 = u.x - x1, d2 = x2 - u.x, d3 = u.y - y1, d4 = y2 - u.y;
@@ -1765,13 +1767,26 @@ function moveTowards(u, tx, ty, dt, stop = 0) {
   if (u.path && u.path.length) {
     while (u.path.length > 1 && Math.hypot(u.x - u.path[0].x, u.y - u.path[0].y) < .5) u.path.shift();
     gx = u.path[0].x; gy = u.path[0].y;
-  } else if (!u.path && S.pathBudget > 0 && lineBlocked(u, tx, ty)) {
-    S.pathBudget--;
-    S.perf.path++;
-    const p = findPath(u.x, u.y, tx, ty, unitRadius(u));
-    if (p && p.length) {
-      u.path = p; u.pathGoal = { x: tx, y: ty };
-      gx = p[0].x; gy = p[0].y;
+  } else if (!u.path) {
+    if (S.time < (u.pathRetryAt || 0)) {
+      // 重算冷却中：这一帧不做直线检测，直接沿旧方向走
+      S.perf.pathCool++;
+    } else if (lineBlocked(u, tx, ty)) {
+      S.perf.pathReq++;
+      if (S.pathBudget > 0) {
+        S.pathBudget--;
+        S.perf.path++;
+        const p = findPath(u.x, u.y, tx, ty, unitRadius(u));
+        if (p && p.length) {
+          u.path = p; u.pathGoal = { x: tx, y: ty };
+          gx = p[0].x; gy = p[0].y;
+        } else {
+          u.pathRetryAt = S.time + .4;
+        }
+      } else {
+        S.perf.pathDef++;
+        u.pathRetryAt = S.time + .4;
+      }
     }
   }
   const dx = gx - u.x, dy = gy - u.y, d = Math.hypot(dx, dy);
@@ -2002,12 +2017,26 @@ function updateUnit(u, dt) {
   if (u.order && u.order.type === 'move') {
     if (u.target && u.target.hp > 0) { engage(u, u.target, dt); return; }
     if (u.crateRun) {
-      // 箱子没了（被捡/到期）或路上遇到敌人：立刻放弃拾箱
-      if (!S.crates.includes(u.crateRun)) { u.crateRun = null; u.order = null; return; }
+      // 箱子没了（被捡/到期）、超时没走到、或进入交火距离：立刻放弃拾箱
+      if (!S.crates.includes(u.crateRun)) {
+        u.crateRun = null; u.order = null;
+        S.crateStats.aborts++; S.crateAborts.gone++;
+        return;
+      }
+      if (u.crateRunT != null && S.time - u.crateRunT > (u.crateRunLimit || 20)) {
+        u.crateRun = null; u.order = null;
+        S.crateStats.aborts++; S.crateAborts.timeout++;
+        return;
+      }
       if (u.team === ENEMY && u.scan <= 0) {
         u.scan = .35;
-        const foe = findSmartTarget(u, Math.max(5.5, U[u.type].aggro || 0));
-        if (foe) { u.crateRun = null; u.order = null; u.target = foe; return; }
+        // 交火距离 = 武器射程 + 1.2 格（不是 aggro、也不是视野）
+        const foe = findSmartTarget(u, (U[u.type].range || 1) + 1.2);
+        if (foe) {
+          u.crateRun = null; u.order = null; u.target = foe;
+          S.crateStats.aborts++; S.crateAborts.combat++;
+          return;
+        }
       }
     }
     const done = moveTowards(u, u.order.x, u.order.y, dt, .04);
@@ -2965,8 +2994,14 @@ function update(dt) {
   updateProjectiles(dt);
   updateParticles(dt);
   solveOverlap();
+  const _t0 = performance.now();
   separateUnits();
+  const _t1 = performance.now();
   for (const u of S.units) if (u.type === 'baseVehicle') pushOutOfBuildings(u);
+  const _t2 = performance.now();
+  S.perf.sepMs += _t1 - _t0;
+  S.perf.pushMs += _t2 - _t1;
+  S.perf.frames++;
   updateTraining(dt);
   updateConstruction(dt);
   updateTutorial(dt);
@@ -3492,7 +3527,7 @@ function aiCrateTick(dt) {
   S.aiCrateT = (S.aiCrateT || 0) - dt;
   if (S.aiCrateT > 0) return;
   S.aiCrateT = 1;
-  S.crateScans = (S.crateScans || 0) + 1;
+  S.crateStats.scans++;
   if (S.tutorial || S.run !== 'skirmish') return;
   if (!S.crates.length) return;
   // 已经有人在捡就不要再派人
@@ -3512,7 +3547,10 @@ function aiCrateTick(dt) {
   if (best) {
     best.u.order = { type: 'move', x: best.c.x, y: best.c.y };
     best.u.crateRun = best.c;
-    (S.crateLog = S.crateLog || []).push({ t: Math.round(S.time), id: best.u.id, type: best.u.type, idle: true });
+    best.u.crateRunT = S.time;
+    const slow = Math.max(.6, Math.min(1, U[best.u.type].speed));
+    best.u.crateRunLimit = (Math.hypot(best.u.x - best.c.x, best.u.y - best.c.y) / slow) * 2;
+    S.crateStats.dispatches++;(S.crateLog = S.crateLog || []).push({ t: Math.round(S.time), id: best.u.id, type: best.u.type, idle: true });
     if (S.crateLog.length > 12) S.crateLog.shift();
   }
 }
@@ -3528,8 +3566,8 @@ function updateCrates(dt) {
     for (const u of S.units) {
       if (u.garrisoned || u.hp <= 0) continue;
       if (Math.hypot(u.x - c.x, u.y - c.y) > 1.0) continue;
-      if (u.team === PLAYER) { grantCrate(c); S.crateStats.player++; }
-      else if (u.team === ENEMY) { grantCrateEnemy(c); S.crateStats.enemy++; }
+      if (u.team === PLAYER) { grantCrate(c); S.crateStats.picksPlayer++; }
+      else if (u.team === ENEMY) { grantCrateEnemy(c); S.crateStats.picksEnemy++; }
       else continue;
       S.crates = S.crates.filter(x => x !== c);
       break;
@@ -5609,9 +5647,20 @@ if (params.get('debug') === '1') {
       superKey: S.superKey,
       tab: S.tab,
       perfPath: S.perf ? S.perf.path : 0,
-      cratePicks: S.crateStats ? (S.crateStats.player + '/' + S.crateStats.enemy) : '0/0',
-      crateScans: S.crateScans || 0,
+      cratePicks: S.crateStats ? (S.crateStats.picksPlayer + '/' + S.crateStats.picksEnemy) : '0/0',
+      crateScan: S.crateStats ? S.crateStats.scans : 0,
+      crateDispatch: S.crateStats ? S.crateStats.dispatches : 0,
+      crateAborts: S.crateStats ? S.crateStats.aborts : 0,
+      crateAbortWhy: S.crateAborts || {},
       crateLog: S.crateLog || [],
+      pathReq: S.perf ? S.perf.pathReq : 0,
+      pathDef: S.perf ? S.perf.pathDef : 0,
+      pathDefPct: S.perf && S.perf.pathReq ? Math.round(S.perf.pathDef / S.perf.pathReq * 1000) / 10 : 0,
+      pathCool: S.perf ? S.perf.pathCool : 0,
+      pathEffPct: S.perf && (S.perf.pathReq + S.perf.pathCool) ? Math.round(S.perf.pathDef / (S.perf.pathReq + S.perf.pathCool) * 1000) / 10 : 0,
+      pushChecks: S.perf ? S.perf.pushChecks : 0,
+      sepMsPerFrame: S.perf && S.perf.frames ? Math.round(S.perf.sepMs / S.perf.frames * 1000) / 1000 : 0,
+      pushMsPerFrame: S.perf && S.perf.frames ? Math.round(S.perf.pushMs / S.perf.frames * 1000) / 1000 : 0,
       perfSep: S.perf ? S.perf.sep : 0,
       keyLog: window.__keyLog || [],
       buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
@@ -5718,6 +5767,11 @@ if (trainSpec && S.mode === 'playing') {
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 if (cancelUnitSpec && S.mode === 'playing') { cancelTrain(cancelUnitSpec); if (window.__dbgUpdate) window.__dbgUpdate(); }
+const crateTimeoutSpec = params.get('crateTimeout');
+if (crateTimeoutSpec === '1' && S.mode === 'playing') {
+  for (const u of S.units) if (u.crateRun) u.crateRunLimit = 0.2;
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
 const crateSpec = params.get('crate');
 if (crateSpec && S.mode === 'playing') {
   const n = Math.max(1, Math.min(6, parseInt(crateSpec, 10) || 1));

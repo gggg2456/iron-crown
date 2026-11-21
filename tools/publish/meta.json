@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "铁与王冠 v1.3.2：AI 拾箱按派工单收口（单 tick / 单人 / 遇敌放弃）",
-  "releaseName": "铁与王冠 v1.3.2 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.3.2 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.3.2 改动\n\n- **AI 拾箱收口**：只在 AI 决策 tick 里每秒扫一次宝箱，一次只派一个「无指令、无目标、非农民」的闲置单位\n- **只用自身视野**判断，发现敌人立即放弃拾箱转为交战\n- 优先级固定为：交战 > 防守 > 建造/训练 > 拾取宝箱 > 闲逛\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图）、小超武战鼓台、数字键切页、A* 寻路与分离优化\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "铁与王冠 v1.3.3：观测基线 + 拾箱三个确认\n\n确认1：crateLog 记的是派工不是拾取；新增 scans/dispatches/aborts(原因)/picks 分开计数\n确认2：crateRun 是每单位字段；新增超时（直线距离/最慢速度×2），超时清状态并允许重派\n确认3：放弃阈值改为交火距离（射程+1.2），不再用 aggro/视野\n基线：40 单位国王难度 pathDefPct 11.7% → 加 0.4s 重算冷却后 0.6%；pushChecks≈7.5万、pushMs≈0.001ms/帧",
+  "releaseName": "铁与王冠 v1.3.3 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.3.3 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.3.3 改动（以观测为主）\n\n- **拾箱三个确认**：派工/拾取分开计数；crateRun 超时（距离/最慢速度×2）；放弃阈值改为交火距离（射程+1.2）\n- **路径基线**：40 单位国王难度沿旧路径占比 11.7% → 加 0.4 秒重算冷却后 **0.6%**\n- **推挤基线**：`pushChecks≈7.5万`、`pushMs≈0.001 ms/帧`，建筑推挤不是瓶颈\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图）、小超武战鼓台、数字键切页、AI 抢箱\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
