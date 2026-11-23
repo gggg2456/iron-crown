@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.4.8 收尾：AI 文案按阵营动态取名 + 已知问题记录",
-  "releaseName": "铁与王冠 v1.4.8 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.4.8 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.8 改动（仅文案与文档，无玩法变化）\n\n- AI 行为提示改为按敌方阵营动态取名（波次、超武、伏兵、拾箱等），以后换阵营不会再说错名字\n- README 新增「已知问题」：建筑夹缝内单位会抖动后被传送救出，计划在寻路网格把窄缝标为不可通行\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "v1.4.9：warp 修正与 AIPlayer 观测能力",
+  "releaseName": "铁与王冠 v1.4.9 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.4.9 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.9 改动（观测能力，无玩法变化）\n\n- `?warp` 上限修正：此前「300 秒」实际只模拟 200 秒，现已能真跑 300 秒（旧基线作废）\n- `?debug=1` 增加屏幕浮层：卡住次数/峰值、分离耗时、寻路退化率、单位数、AI 时间线，5 帧刷新\n- `stuckPeak`：同时卡住峰值，含「建筑夹缝里位置合法但被推挤抵消」的情形\n- warp 分段耗时（每 1000 步）与敌方兵种构成，仅调试可见\n- 基线报告：`tools/reports/aip-baseline-v149.md`（两次 300 秒跑的完整序列与对比协议）\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }

@@ -10,6 +10,19 @@
 ---
 
 
+
+## v1.4.9 观测能力（为 AIPlayer 重构做准备）
+
+| 项 | 说明 |
+| --- | --- |
+| `?warp` 修正 | 上限从 4000 步提到 30000 步——此前「300 秒」实际只模拟 200 秒，旧数据已作废 |
+| `warpSegments` | 每 1000 步用 `performance.now()` 记一段，warp 结束后一次性输出，不打日志、不污染测量 |
+| 可见调试浮层 | `?debug=1` 时右上角显示 `stuck/peak`、`sepMs`、`pathDef`、单位数、`aiTimes`、敌方阵营；5 帧刷新，`pointer-events:none`，刷新在性能计时累加之后 |
+| `stuckPeak` | 除累计 `stuckTeleports` 外，另记「同时卡住峰值」，条件为「有指令 + 卡顿 >1.5 秒 + （所在格 blocked 或本帧位移 <0.05）」，覆盖建筑夹缝情形 |
+| `enemyTypes` | 调试字段，只记录不判等（AI 训练用 `Math.random`） |
+
+**基线数据见 [tools/reports/aip-baseline-v149.md](tools/reports/aip-baseline-v149.md)**：两次默认配置 300 秒跑的 30 点 `enemyUnits` 完整序列、`aiTimes`、`stuckTeleports`（137/113）与 `stuckPeak`（9/6）、warp 分段耗时、以及 AIPlayer 对比协议（容差 ±2）。
+
 ## 已知问题
 
 | 问题 | 现状 | 计划 |

@@ -2179,6 +2179,8 @@ function updateUnit(u, dt) {
     }
   }
   u.attackCd -= dt;  u.flash = Math.max(0, u.flash - dt);
+  u._movedThisFrame = Math.hypot(u.x - (u._fx === undefined ? u.x : u._fx), u.y - (u._fy === undefined ? u.y : u._fy));
+  u._fx = u.x; u._fy = u.y;
   if (u.fatigueT > 0) u.fatigueT -= dt;
   if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 9);
   if (u.militiaT > 0) {
@@ -3326,9 +3328,19 @@ function update(dt) {
   }
   S.perf.pushMs += _t2 - _t1;
   S.perf.frames++;
+  // 同时卡住峰值：所在格 blocked 或本帧几乎没动（覆盖「建筑夹缝里位置合法但被推挤抵消」）
+  let _stuckNow = 0;
+  for (const u of S.units) {
+    if (u.hp <= 0 || u.garrisoned) continue;
+    if (!u.order && !u.target) continue;
+    if ((u.stillT || 0) <= 1.5) continue;
+    if (u.dbgBlocked || (u._movedThisFrame || 0) < .05) _stuckNow++;
+  }
+  if (_stuckNow > (S.stuckPeak || 0)) S.stuckPeak = _stuckNow;
   updateTraining(dt);
   updateConstruction(dt);
   updateTutorial(dt);
+  if (window.__dbgHud) window.__dbgHud();
   Sound.ambient(dt);
   updateHud();
   if (S.time - (S.lastQueue || 0) > .15) {
@@ -6093,6 +6105,27 @@ if (params.get('mode') === 'tutorial' || params.get('tutorial') === '1') {
 }
 if (params.get('debug') === '1') {
   window.__ic = S;
+  const dbgHud = document.createElement('div');
+  dbgHud.id = 'debug-hud';
+  dbgHud.style.cssText = 'position:fixed;right:10px;top:10px;z-index:9999;pointer-events:none;'
+    + 'will-change:transform;font:11px/1.5 Consolas,monospace;color:#e8e0c8;'
+    + 'background:rgba(10,12,10,.72);border:1px solid rgba(220,200,140,.35);border-radius:6px;'
+    + 'padding:6px 8px;white-space:pre;text-align:left';
+  document.body.appendChild(dbgHud);
+  let dbgTick = 0;
+  window.__dbgHud = () => {
+    if (++dbgTick % 5) return;
+    const sepMs = S.perf && S.perf.frames ? (S.perf.sepMs / S.perf.frames).toFixed(3) : '0';
+    const defPct = S.perf && S.perf.pathReq ? ((S.perf.pathDef / S.perf.pathReq) * 100).toFixed(1) : '0';
+    const at = S.aiTimes || {};
+    dbgHud.textContent = [
+      'stuck ' + (S.stuckTeleports || 0) + '  peak ' + (S.stuckPeak || 0),
+      'sep ' + sepMs + 'ms/f  pathDef ' + defPct + '%',
+      'units ' + S.units.filter(u => u.team === PLAYER).length + '/' + S.units.filter(u => u.team === ENEMY).length,
+      'ai ' + (at.barracks === undefined ? '-' : at.barracks) + 's/' + (at.workshop === undefined ? '-' : at.workshop) + 's/' + (at.firstWave === undefined ? '-' : at.firstWave) + 's',
+      'foe ' + enemyFactionName()
+    ].join('\n');
+  };
   const dbg = document.createElement('pre');
   dbg.id = 'debug-state';
   dbg.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden';
@@ -6139,6 +6172,9 @@ if (params.get('debug') === '1') {
       riskPicks: S.crateStats ? S.crateStats.riskPicks : 0,
       dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
       stuckTeleports: S.stuckTeleports || 0,
+      stuckPeak: S.stuckPeak || 0,
+      warpStats: window.__warpStats || null,
+      enemyTypes: S.units.filter(u => u.team === ENEMY).reduce((m, u) => (m[u.type] = (m[u.type] || 0) + 1, m), {}),
       pushLog: S.pushLog || [],
       slots: S.slots || [],
       slotErrors: S.slotErrors || [],
@@ -6470,8 +6506,15 @@ if (endSpec && S.mode === 'playing') {
 }
 const warpSec = parseFloat(params.get('warp') || '0');
 if (Number.isFinite(warpSec) && warpSec > 0 && S.mode === 'playing') {
-  const steps = Math.min(4000, Math.round(warpSec * 20));
-  for (let i = 0; i < steps; i++) update(1 / 20);
+  const steps = Math.min(30000, Math.round(warpSec * 20));
+  const t0 = performance.now();
+  let last = t0;
+  const segs = [];
+  for (let i = 0; i < steps; i++) {
+    update(1 / 20);
+    if ((i + 1) % 1000 === 0) { const now = performance.now(); segs.push(Math.round(now - last)); last = now; }
+  }
+  window.__warpStats = { steps, ms: Math.round(performance.now() - t0), segs };
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 // 调试用：?place=1 把已就绪的建筑直接放到主堡旁（在 warp 之后执行），验证「就绪→放置」流程。
