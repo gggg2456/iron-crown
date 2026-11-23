@@ -59,6 +59,7 @@ const DIFFS = {
 
 const B = {
   keep: {
+    faithProd: 2,
     name: '赤蔷薇主堡', enemyName: '黑鸦主堡', w: 3, d: 3, hp: 2600, h: 126,
     attack: { range: 6.4, dmg: 9, cd: 1.45 }, dropoff: true, produces: ['peasant'],
     desc: '王国的心脏。自动向附近敌人射箭，也是农民存放金币的地方。'
@@ -68,11 +69,13 @@ const B = {
     cost: 80, desc: '增加 6 点人口上限。可驻守 4 名步兵，驻军中的弓手会从窗口射击。'
   },
   barracks: {
+    faithCost: 2,
     name: '兵营', enemyName: '黑鸦兵营', w: 2, d: 2, hp: 820, h: 80,
     cost: 120, produces: ['spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'halberdier', 'priest'],
     desc: '训练长矛兵、剑士、重弩手、长弓手、骑士、戟兵与祭司。每多一座兵营，训练速度额外 +50%（可叠加）。'
   },
   tower: {
+    faithCost: 2,
     name: '箭塔', enemyName: '黑鸦箭塔', w: 2, d: 2, hp: 620, h: 108,
     cost: 100, attack: { range: 6.8, dmg: 11, cd: 1.15 },
     desc: '自动射击射程内的敌人。建在矿脉或主堡前方，能拖住一整波攻势。'
@@ -87,6 +90,7 @@ const B = {
     cost: 30, desc: '便宜的石头墙段，可阻挡并拖延敌军，为箭塔争取射击时间。'
   },
   fountain: {
+    faithProd: 4,
     name: '圣泉', enemyName: '圣泉', w: 2, d: 2, hp: 440, h: 56, icon: 'store',
     cost: 110, heal: { range: 4.3, amount: 4, cd: .8 },
     desc: '持续治疗周围的友军。放置在主堡或箭塔后方，让防线更持久。'
@@ -97,6 +101,7 @@ const B = {
     desc: '增加 8 点人口上限，并让全军训练速度额外 +15%。'
   },
   workshop: {
+    faithCost: 3,
     name: '车厂', enemyName: '黑鸦车厂', w: 3, d: 3, hp: 900, h: 78, icon: 'workshop',
     cost: 220, produces: ['ram', 'catapult', 'scorpion'],
     desc: '制造中世纪攻城车辆：冲车、投石车与弩车。车辆缓慢，但能撕开城墙与密集阵型。'
@@ -107,11 +112,13 @@ const B = {
     desc: '每 6 秒带来 7 金币的贸易收入。越早建造，后期经济越稳。'
   },
   cathedral: {
+    faithProd: 8,
     name: '大教堂', enemyName: '黑鸦大教堂', w: 3, d: 3, hp: 1100, h: 118, icon: 'castle',
     cost: 320, pop: 10, bless: { amount: 6, cd: 6 }, garrison: 6,
     desc: '主要建筑。增加 10 点人口上限，每 6 秒为全场友军恢复 6 点生命。可驻守 6 名步兵，弓手会从塔楼射击。'
   },
   ballista: {
+    faithCost: 3,
     name: '弩炮塔', enemyName: '黑鸦弩炮塔', w: 2, d: 2, hp: 700, h: 104, icon: 'catapult',
     cost: 180, attack: { range: 9.2, dmg: 34, cd: 2.2 },
     desc: '射程极远的重型弩炮，专门撕开重甲单位与攻城部队。'
@@ -127,16 +134,19 @@ const B = {
     desc: 'T2 后勤建筑。增加 4 点人口，并提高车厂与兵营的训练效率。'
   },
   sunAltar: {
+    faithCost: 5,
     name: '天火祭坛', enemyName: '黑鸦天火祭坛', w: 2, d: 2, hp: 880, h: 112, icon: 'catapult',
     cost: 360, superBuilding: 'fire',
     desc: 'T3 超武建筑。建成后才能选择并建造「天火圣裁」。'
   },
   stormSpire: {
+    faithCost: 5,
     name: '雷霆尖塔', enemyName: '黑鸦雷霆尖塔', w: 2, d: 2, hp: 820, h: 116, icon: 'tower',
     cost: 340, superBuilding: 'storm',
     desc: 'T3 超武建筑。建成后才能选择「雷霆审判」。'
   },
   plagueWell: {
+    faithCost: 5,
     name: '瘟疫之井', enemyName: '黑鸦瘟疫之井', w: 2, d: 2, hp: 760, h: 86, icon: 'store',
     cost: 320, superBuilding: 'plague',
     desc: 'T3 超武建筑。建成后才能选择「瘟疫之息」。'
@@ -737,6 +747,34 @@ function teamName(t) { return t === PLAYER ? factionOf().name : t === ALLY ? '�
 function bname(b) { return b.team === ENEMY ? B[b.type].enemyName : (b.team === ALLY ? '盟军·' : '') + B[b.type].name; }
 function uname(u) { return u.team === ENEMY ? U[u.type].enemyName : (u.team === ALLY ? '盟军·' : '') + U[u.type].name; }
 function isFriendlyTeam(a, b) { return a === b || (a !== ENEMY && b !== ENEMY); }
+// ===== 民心（faith）=====
+// 产出 = 主堡 +2 / 圣泉 +4 / 大教堂 +8；消耗 = 箭塔 2 / 弩炮塔 3 / 兵营 2 / 车厂 3 / 超武建筑 5
+// ratio = clamp(prod / max(cost,1), 0, 1)；系数写死在这三个函数里，别散落
+const FAITH_RATE = {
+  defense: r => 0.5 + 0.5 * r,
+  train: r => 0.8 + 0.2 * r,
+  super: r => 0.7 + 0.3 * r
+};
+function faithOf(team) {
+  let prod = 0, cost = 0;
+  for (const b of S.buildings) {
+    if (b.team !== team || b.constructed === false || b.hp <= 0) continue;
+    const d = B[b.type];
+    if (!d) continue;
+    prod += d.faithProd || 0;
+    cost += d.faithCost || 0;
+  }
+  const ratio = cost > 0 ? Math.min(1, prod / Math.max(cost, 1)) : 1;
+  return { prod, cost, ratio, gap: Math.max(0, cost - prod) };
+}
+function faithRefresh() {
+  S.faith = faithOf(PLAYER);
+  S.enemyFaith = faithOf(ENEMY);
+}
+function faithRatio() {
+  if (!S.faith) faithRefresh();
+  return S.faith ? S.faith.ratio : 1;
+}
 function popCap() {
   return 10 + S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && b.type === 'house').length * 6
     + S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && b.type === 'armory').length * 8
@@ -784,7 +822,7 @@ function trainingSpeedFor(cat) {
   const armories = S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && b.type === 'armory').length;
   const forges = S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && b.type === 'forge').length;
   const siegeBonus = S.tech.strategy_siege && cat === 'workshop' ? 1.2 : 1;
-  return sp * (1 + armories * .15 + forges * .08) * (1 + (S.tech.drill ? .15 : 0)) * siegeBonus;
+  return sp * (1 + armories * .15 + forges * .08) * (1 + (S.tech.drill ? .15 : 0)) * siegeBonus * (cat === 'barracks' || cat === 'workshop' ? FAITH_RATE.train(faithRatio()) : 1);
 }
 function techDmgMul(u) {
   let m = 1;
@@ -1244,6 +1282,7 @@ function resetWorld() {
   S.crateAborts = { combat: 0, gone: 0, timeout: 0 };
   S.pathBudget = 4;
   S.buildQ = { cur: null, queue: [] };
+  S.faith = { prod: 0, cost: 0, ratio: 1, gap: 0 }; S.faithT = 0;
   S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.enemySuper = null; S.radar = false;
   S.stats = { kills: 0, losses: 0, gathered: 0 };
   const L = currentLevel();
@@ -2549,7 +2588,7 @@ function updateBuildings(dt) {
       }
     }
     if (b.target && b.target.hp > 0 && b.attackCd <= 0 && distanceTo(b.target, b) <= B[b.type].attack.range) {
-      b.attackCd = B[b.type].attack.cd;
+      b.attackCd = B[b.type].attack.cd / ((b.team === PLAYER && (b.type === 'tower' || b.type === 'ballista')) ? FAITH_RATE.defense(faithRatio()) : 1);
       spawnArrow(b.x, b.y, B[b.type].h * .72, b.target, B[b.type].attack.dmg * (b.team === ENEMY ? (S.enemyMods?.dmg || 1) : 1), b.team);
       Sound.play('bow');
     }
@@ -2964,6 +3003,7 @@ function updateAI(dt) {
   S.enemy.buildRetry -= dt;
   if (S.enemy.buildRetry <= 0) {
     S.enemy.buildRetry = 5;
+    tryBuildEnemyFountain();
     tryBuildEnemyBarracks();
     tryBuildEnemyWorkshop();
   }
@@ -3060,6 +3100,24 @@ function tryBuildEnemyBarracks() {
       if (!canPlace('barracks', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
       nudgeUnitsOut(tx, ty, 2, 2);
       const b = addBuilding('barracks', tx, ty, ENEMY);
+      b.constructed = true; b.progress = 1;
+      burst(b.x, b.y, 'dust', 14);
+      return true;
+    }
+  }
+  return false;
+}
+function tryBuildEnemyFountain() {
+  if (S.buildings.some(b => b.team === ENEMY && b.type === 'fountain' && b.hp > 0 && !b.dead)) return false;
+  if (faithOf(ENEMY).gap <= 5) return false;
+  const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0 && !b.dead);
+  if (!keep) return false;
+  for (let r = 3; r <= 10; r++) {
+    for (let a = 0; a < 16; a++) {
+      const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 3);
+      const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 3);
+      if (!canPlace('fountain', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+      const b = addBuilding('fountain', tx, ty, ENEMY);
       b.constructed = true; b.progress = 1;
       burst(b.x, b.y, 'dust', 14);
       return true;
@@ -3298,11 +3356,12 @@ function update(dt) {
   updateCrates(dt);
   aiCrateTick(dt);
   S.radar = playerHasBuilding('watchtower');
+  if (!S.faithT || S.time >= S.faithT) { S.faithT = (S.time || 0) + .5; faithRefresh(); }
   if (!S.aiTraceT || S.time >= S.aiTraceT) {
     S.aiTraceT = (S.time || 0) + 10;
     if (S.aiTrace.length < 40) S.aiTrace.push({ t: Math.round(S.time), u: S.units.filter(x => x.team === ENEMY).length });
   }
-  S.superCd = Math.max(0, S.superCd - dt);
+  S.superCd = Math.max(0, S.superCd - dt * FAITH_RATE.super(faithRatio()));
   S.miniCd = Math.max(0, S.miniCd - dt);
   for (const f of S.superFx) f.t += dt;
   S.superFx = S.superFx.filter(f => f.t < f.dur);
@@ -4775,6 +4834,7 @@ function render(now) {
 /* ===== 9. UI & INPUT ===== */
 const els = {
   gold: $('#gold-value'), pop: $('#pop-value'), army: $('#army-value'),
+  faith: $('#faith-value'), faithChip: $('#faith-chip'),
   wave: $('#wave-timer'), waveChip: $('#wave-chip'),
   tabs: $('#command-tabs'), grid: $('#command-grid'), queue: $('#command-queue'),
   selEmpty: $('#selection-empty'), selContent: $('#selection-content'),
@@ -4823,7 +4883,9 @@ function renderCards() {
     const def = c.def;
     const cost = def.cost;
     const hi = all.indexOf(key);
-    return `<button class="cmd-card" data-key="${key}" data-index="${i}">
+    const fw = (c.type === 'building' && (def.faithCost || 0) > 0 && S.faith) ? (S.faith.prod / Math.max(1, S.faith.cost + def.faithCost) < 1) : false;
+    const fwTitle = fw ? ` title="将导致民心不足：消耗 ${S.faith.cost} → ${S.faith.cost + def.faithCost}，产出 ${S.faith.prod}"` : '';
+    return `<button class="cmd-card${fw ? ' warn-faith' : ''}" data-key="${key}" data-index="${i}"${fwTitle}>
       <span class="hotkey">${HOTKEYS[hi] || ''}</span>
       ${c.type === 'tech' ? `<span class="cmd-tier">${def.tier}</span>` : (c.type === 'building' ? `<span class="cmd-tier">T${buildingTier(key)}</span>` : '')}
       <svg class="cmd-icon"><use href="#i-${def.icon || key}"></use></svg>
@@ -5115,6 +5177,22 @@ function updateHud(force = false) {
   if (force || els.gold.textContent != g) els.gold.textContent = g;
   if (force || els.pop.textContent != `${p}/${cap}`) els.pop.textContent = `${p}/${cap}`;
   if (force || els.army.textContent != a) els.army.textContent = a;
+  if (els.faith && S.faith) {
+    const f = S.faith;
+    const txt = f.cost > 0 ? (f.prod + '/' + f.cost) : String(f.prod);
+    if (force || els.faith.textContent !== txt) els.faith.textContent = txt;
+    const cls = f.ratio >= 1 ? 'ok' : f.ratio >= .7 ? 'warn' : 'bad';
+    if (els.faithChip) {
+      els.faithChip.classList.toggle('f-ok', cls === 'ok');
+      els.faithChip.classList.toggle('f-warn', cls === 'warn');
+      els.faithChip.classList.toggle('f-bad', cls === 'bad');
+      const d = Math.round(FAITH_RATE.defense(f.ratio) * 100), t = Math.round(FAITH_RATE.train(f.ratio) * 100), sp = Math.round(FAITH_RATE.super(f.ratio) * 100);
+      els.faithChip.title = f.gap > 0
+        ? '军事建筑消耗 ' + f.cost + '，圣泉与大教堂提供 ' + f.prod + '，缺口 ' + f.gap
+          + ' —— 箭塔射速 ' + d + '%、训练 ' + t + '%、超武冷却 ' + sp + '%'
+        : '民心充足：产出 ' + f.prod + ' ≥ 消耗 ' + f.cost + '，全部满速';
+    }
+  }
   if (els.wave) {
     els.wave.textContent = fmtTime(S.wave.timer);
     els.waveChip.classList.toggle('urgent', S.wave.timer < 12);
@@ -5175,6 +5253,8 @@ function updateSelectionPanel(force = false) {
     <div class="sel-hp"><i style="width:${clamp(b.hp / b.maxHp * 100, 0, 100)}%"></i><span>${Math.ceil(b.hp)} / ${b.maxHp}</span></div>
     ${b.constructed === false ? `<div class="sel-extra"><b>建造进度</b><span>${Math.round((b.progress || 0) * 100)}% · 剩余约 ${Math.max(1, Math.ceil((1 - (b.progress || 0)) * (BUILD_TIME[b.type] || 4)))} 秒</span></div>` : ''}
     <div class="sel-meta">${b.constructed === false ? '<em>建造中 · 功能未启用</em>' : `${def.attack ? `<em>射程 ${def.attack.range}</em><em>伤害 ${def.attack.dmg}</em>` : ''}${def.produces ? `<em>可训练 ${def.produces.slice(0, 3).map(t => U[t].name).join(' · ')} 等 ${def.produces.length} 种</em>` : ''}${def.pop ? `<em>人口 +${def.pop}</em>` : ''}${def.dropoff ? '<em>金币交付点</em>' : ''}`}</div>
+    ${(b.team === PLAYER && b.constructed !== false && (b.type === 'tower' || b.type === 'ballista') && faithRatio() < 1) ? `<div class="sel-extra"><b>民心不足</b><span>射速 ${Math.round(FAITH_RATE.defense(faithRatio()) * 100)}%（基础 ${def.attack ? Math.round(1000 / def.attack.cd) / 10 : '-'} 次/秒）</span></div>` : ''}
+    ${(b.team === PLAYER && b.constructed !== false && (b.type === 'barracks' || b.type === 'workshop') && faithRatio() < 1) ? `<div class="sel-extra"><b>民心不足</b><span>训练速度 ${Math.round(FAITH_RATE.train(faithRatio()) * 100)}%</span></div>` : ''}
     ${def.garrison ? `<div class="sel-extra"><b>驻军</b><span>${b.garrison.length}/${def.garrison} 名步兵 · 弓手会从窗口射击</span></div>` : ''}
     ${isProducer(b) ? `<div class="sel-extra"><b>集结点</b><span>${b.rally ? `已设置 · (${Math.round(b.rally.x)}, ${Math.round(b.rally.y)})` : '左键点击地面设置新兵集合点'}</span></div>` : ''}
     <div class="sel-actions">
@@ -6255,6 +6335,8 @@ if (params.get('debug') === '1') {
       dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
       stuckTeleports: S.stuckTeleports || 0,
       stuckPeak: S.stuckPeak || 0,
+      faith: S.faith || null,
+      faithEff: { def: Math.round(FAITH_RATE.defense(faithRatio()) * 1000) / 1000, train: Math.round(FAITH_RATE.train(faithRatio()) * 1000) / 1000, sup: Math.round(FAITH_RATE.super(faithRatio()) * 1000) / 1000 },
       ctest: window.__ctest || null,
       building: S.buildings.filter(b => b.team === PLAYER && b.type !== 'keep').map(b => ({ t: b.type, done: b.constructed !== false, p: Math.round((b.progress || 0) * 100) })),
       producers: S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && ['barracks', 'workshop', 'keep'].includes(b.type)).map(b => b.type),

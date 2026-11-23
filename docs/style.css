@@ -556,3 +556,9 @@ body.menu-mode #game-canvas { cursor: default; }
 .tut-step.now span { border-color: #e0bd75; color: #ffe6b2; }
 .cmd-card.done { animation: cardDone .75s ease; }
 @keyframes cardDone { 0% { box-shadow: 0 0 0 0 rgba(240,205,120,.0); } 35% { box-shadow: 0 0 0 3px rgba(240,205,120,.75); } 100% { box-shadow: 0 0 0 0 rgba(240,205,120,0); } }
+
+.faith-chip.f-ok b { color: #8fd6a0; }
+.faith-chip.f-warn b { color: #e8c86a; }
+.faith-chip.f-bad b { color: #e0664f; animation: faithBlink 1.2s ease-in-out infinite; }
+@keyframes faithBlink { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.cmd-card.warn-faith::after { content: '!'; position: absolute; right: 4px; bottom: 3px; width: 13px; height: 13px; border-radius: 50%; background: #c8452f; color: #fff; font: 700 10px/13px sans-serif; text-align: center; }
