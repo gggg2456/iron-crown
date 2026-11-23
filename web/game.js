@@ -1713,6 +1713,17 @@ function blockedAt(x, y, u = null) {
   }
   return false;
 }
+function pushStuckLog(u, free, before) {
+  S.pushLog = S.pushLog || [];
+  if (S.pushLog.length > 12) S.pushLog.shift();
+  S.pushLog.push({
+    type: u.type,
+    tile: [Math.floor(u.x), Math.floor(u.y)],
+    blocked: true,
+    from: before || [Math.round(u.x * 100) / 100, Math.round(u.y * 100) / 100],
+    to: [Math.round(free.x * 100) / 100, Math.round(free.y * 100) / 100]
+  });
+}
 function pushOutOfBuildings(u) {
   if (u.garrisoned) return;
   const r = unitRadius(u) + .08;
@@ -1720,10 +1731,24 @@ function pushOutOfBuildings(u) {
     S.perf.pushChecks++;
     const x1 = b.tx - r, x2 = b.tx + b.w + r, y1 = b.ty - r, y2 = b.ty + b.d + r;
     if (u.x <= x1 || u.x >= x2 || u.y <= y1 || u.y >= y2) continue;
-    const d1 = u.x - x1, d2 = x2 - u.x, d3 = u.y - y1, d4 = y2 - u.y;
-    const m = Math.min(d1, d2, d3, d4);
-    if (m === d1) u.x = x1; else if (m === d2) u.x = x2;
-    else if (m === d3) u.y = y1; else u.y = y2;
+    // 四边候选落点，优先选真正空出来的那一侧，避免被推进另一栋建筑
+    const cands = [
+      { x: x1, y: u.y }, { x: x2, y: u.y },
+      { x: u.x, y: y1 }, { x: u.x, y: y2 }
+    ];
+    cands.sort((a, c) => Math.hypot(a.x - u.x, a.y - u.y) - Math.hypot(c.x - u.x, c.y - u.y));
+    const ok = cands.find(c => !walkBlocked(Math.floor(c.x), Math.floor(c.y), r));
+    if (ok) { u.x = ok.x; u.y = ok.y; }
+    else { u.x = cands[0].x; u.y = cands[0].y; }
+  }
+  // 推完仍在阻挡格（用小容差判定，避免把「刚好贴边」误判成卡住）：直接弹到最近空地
+  if (walkBlocked(Math.floor(u.x), Math.floor(u.y), .05)) {
+    const free = nearestFreeSpot(u.x, u.y, 5, .05);
+    if (free) {
+      pushStuckLog(u, free);
+      u.x = free.x; u.y = free.y; u.path = null;
+      S.stuckTeleports = (S.stuckTeleports || 0) + 1;
+    }
   }
 }
 /* ===== 4. PATHFINDING ===== */
@@ -2128,18 +2153,24 @@ function engage(u, target, dt) {
   }
 }
 function updateUnit(u, dt) {
-  const _md = Math.hypot(u.x - (u._lx === undefined ? u.x : u._lx), u.y - (u._ly === undefined ? u.y : u._ly));
-  u._lx = u.x; u._ly = u.y;
   u.dbgBlocked = walkBlocked(Math.floor(u.x), Math.floor(u.y), unitRadius(u));
-  if (u.order && _md < .02) u.stillT = (u.stillT || 0) + dt; else u.stillT = 0;
-  if (u.stillT > 3) {
+  // 锚点式卡死检测：每 0.5 秒和锚点比位移，避免「被推挤来回抖动」时逐帧位移过大而漏判
+  if (!u.stuckAnchor) u.stuckAnchor = { x: u.x, y: u.y, t: 0 };
+  u.stuckAnchor.t += dt;
+  if (u.stuckAnchor.t >= .5) {
+    const moved = Math.hypot(u.x - u.stuckAnchor.x, u.y - u.stuckAnchor.y);
+    const wantsMove = !!(u.order || u.target);
+    if (wantsMove && moved < .15) u.stillT = (u.stillT || 0) + u.stuckAnchor.t;
+    else u.stillT = 0;
+    u.stuckAnchor = { x: u.x, y: u.y, t: 0 };
+  }
+  if ((u.stillT || 0) >= 3) {
     u.stillT = 0;
-    if (u.dbgBlocked) {
-      const free = nearestFreeSpot(u.x, u.y, 4, unitRadius(u));
-      if (free) {
-        u.x = free.x; u.y = free.y; u.path = null; u.pathGoal = null;
-        S.stuckTeleports = (S.stuckTeleports || 0) + 1;
-      }
+    const free = nearestFreeSpot(u.x, u.y, 5, unitRadius(u));
+    if (free) {
+      pushStuckLog(u, free);
+      u.x = free.x; u.y = free.y; u.path = null; u.pathGoal = null;
+      S.stuckTeleports = (S.stuckTeleports || 0) + 1;
     }
   }
   u.attackCd -= dt;  u.flash = Math.max(0, u.flash - dt);
@@ -4571,7 +4602,7 @@ function render(now) {
   for (const u of S.units) {
     if (u.garrisoned) continue;
     if (u.team === ENEMY && !isVisibleToPlayer(u.x, u.y)) continue;
-    list.push({ sort: u.y, draw: () => drawUnit(u, t), x: u.x, y: u.y });
+    list.push({ sort: u.y + .25, draw: () => drawUnit(u, t), x: u.x, y: u.y });
   }
   list.sort((a, b) => a.sort - b.sort);
   for (const o of list) {
@@ -6057,6 +6088,7 @@ if (params.get('debug') === '1') {
       riskPicks: S.crateStats ? S.crateStats.riskPicks : 0,
       dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
       stuckTeleports: S.stuckTeleports || 0,
+      pushLog: S.pushLog || [],
       slots: S.slots || [],
       slotErrors: S.slotErrors || [],
       uiLog: S.uiLog || null,
@@ -6321,6 +6353,31 @@ if (castSuperSpec === '1' && S.mode === 'playing') {
     S.superCd = SUPERS[S.superKey].cd;
   }
   updateSuperUI();
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const denseSpec = params.get('dense');
+if (denseSpec === '1' && S.mode === 'playing') {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  if (keep) {
+    const types = ['house', 'house', 'house', 'house', 'house', 'house', 'tower', 'tower', 'tower', 'tower'];
+    types.forEach((t, i) => {
+      const ang = i * 1.7;
+      for (let r = 3; r <= 8; r++) {
+        const tx = Math.round(keep.x + Math.cos(ang) * r);
+        const ty = Math.round(keep.y + Math.sin(ang) * r);
+        if (canPlace(t, tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) {
+          const b = addBuilding(t, tx, ty, PLAYER);
+          b.constructed = true; b.progress = 1;
+          break;
+        }
+      }
+    });
+    for (let k = 0; k < 10; k++) {
+      const a = k / 10 * Math.PI * 2;
+      const u = addUnit('spearman', PLAYER, keep.x + Math.cos(a) * 5.5, keep.y + Math.sin(a) * 5.5);
+      u.order = { type: 'move', x: keep.x - Math.cos(a) * 5.5, y: keep.y - Math.sin(a) * 5.5 };
+    }
+  }
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
