@@ -1120,7 +1120,7 @@ const Voice = {
 /* ------------- world ------------- */
 let seed = seeded(1337);
 
-function addBuilding(type, tx, ty, team) {
+function addBuilding(type, tx, ty, team, opts = {}) {
   const d = B[type];
   let hp = team === ENEMY ? Math.round(d.hp * (1 + ((S.enemyMods?.hp || 1) - 1) * .55)) : d.hp;
   if (team === PLAYER && ['tower', 'wall', 'ballista', 'watchtower'].includes(type)) hp = Math.round(hp * modVal('towerHpMul'));
@@ -1130,7 +1130,7 @@ function addBuilding(type, tx, ty, team) {
     attackCd: rnd(0, .8), healCd: rnd(0, .5), scan: 0, target: null, flash: 0, phase: rnd(0, 6),
     incomeCd: rnd(.2, 1), blessCd: rnd(.5, 1.5),
     garrison: [], garrisonCd: rnd(0, .6),
-    constructed: true, progress: 1,
+    constructed: !opts.underConstruction, progress: opts.underConstruction ? 0 : 1,
     dead: false
   };
   S.buildings.push(b);
@@ -1138,7 +1138,7 @@ function addBuilding(type, tx, ty, team) {
     S.aiTimes = S.aiTimes || {};
     if (!S.aiTimes[type]) S.aiTimes[type] = Math.round(S.time);
   }
-  if (team === PLAYER) armSuperForBuilding(type);
+  if (team === PLAYER && !opts.underConstruction) armSuperForBuilding(type);
   return b;
 }
 function addUnit(type, team, x, y) {
@@ -2474,6 +2474,9 @@ function updateBuildings(dt) {
           floatText(b.x, b.y, '建造完成', '#f0d18a');
           toast(`${bname(b)}建造完成`, '', 'castle');
           Sound.play('buildPlace');
+          superHintOnce(b.type);
+          flashCard(b.type);
+          burst(b.x, b.y, 'gold', 10);
         }
         updateHud(true);
       }
@@ -2852,15 +2855,12 @@ function placeBuilding() {
   const def = B[type];
   S.trees = S.trees.filter(t => !(t.x > tx - .8 && t.x < tx + def.w + .8 && t.y > ty - .8 && t.y < ty + def.d + .8));
   S.props = S.props.filter(p => !(p.x > tx - .8 && p.x < tx + def.w + .8 && p.y > ty - .8 && p.y < ty + def.d + .8));
-  const b = addBuilding(type, tx, ty, PLAYER);
-  b.constructed = true;
-  b.progress = 1;
+  const b = addBuilding(type, tx, ty, PLAYER, { underConstruction: true });
   burst(b.x, b.y, 'dust', 16);
   Sound.play('buildPlace');
-  superHintOnce(type);
-  floatText(b.x, b.y, `${def.name}落成`, '#e8cf94');
-  flashCard(type);
-  toast(`${def.name}建造完成`, '', 'castle');
+  const grow = Math.max(1, Math.round(BUILD_TIME[type] || 4));
+  floatText(b.x, b.y, `${def.name}开工`, '#e8cf94');
+  toast(`${def.name}开始施工 · 约 ${grow} 秒`, '', 'castle');
   cancelPlacement(true);
   if (S.buildQ.cur) S.buildQ.cur = null;
   if (S.buildQ.queue.length) S.buildQ.cur = S.buildQ.queue.shift();
@@ -3716,11 +3716,93 @@ function drawDrumTower(b, now) {
   ctx.strokeStyle = '#3a2c1d'; ctx.lineWidth = 2.4;
   ctx.beginPath(); ctx.moveTo(-15, -27); ctx.lineTo(15, -27); ctx.stroke();
 }
+function drawConstruction(b, now) {
+  const p = clamp(b.progress || 0, 0, 1);
+  const def = B[b.type];
+  const w = def.w, d = def.d, h = def.h;
+  // 石质地基
+  ctx.fillStyle = 'rgba(58,54,48,.92)';
+  ctx.beginPath();
+  ctx.moveTo(-w * HW * .5, 2);
+  ctx.lineTo(0, d * HH * .5 + 2);
+  ctx.lineTo(w * HW * .5, 2);
+  ctx.lineTo(0, -d * HH * .5 + 2);
+  ctx.closePath(); ctx.fill();
+  // 脚手架：4 竖柱 + 2 横杆，颜色随进度由木色转石色
+  const mix = Math.round(p * 255);
+  ctx.strokeStyle = 'rgb(' + (139 - Math.round(p * 17)) + ',' + (111 - Math.round(p * 9)) + ',' + (71 + Math.round(p * 51)) + ')';
+  ctx.lineWidth = 1.6;
+  const spread = Math.max(10, w * HW * .34);
+  for (const sx of [-spread, spread]) {
+    ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, -h * .92); ctx.stroke();
+  }
+  const bar = (yy) => {
+    ctx.beginPath(); ctx.moveTo(-spread, yy); ctx.lineTo(spread, yy); ctx.stroke();
+  };
+  bar(-h * .34); bar(-h * .68);
+  // 墙体从下往上长：裁剪出从地面往上 frac 高度的区域，再调用原绘制
+  const frac = clamp((p - .25) / .75, 0, 1);
+  if (window.__ctestOn) {
+    S.clipTrace = S.clipTrace || [];
+    if (S.clipTrace.length < 60) S.clipTrace.push({ p: Math.round(p * 100), frac: Math.round(frac * 1000) / 1000, flag: p > .85 });
+  }
+  if (frac > 0.01) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-w * HW, -h * frac + 6, w * HW * 2, h * frac + 40);
+    ctx.clip();
+    if (b.type === 'keep') drawKeep(b, now);
+    else if (b.type === 'house') drawHouse(b, now);
+    else if (b.type === 'barracks') drawBarracks(b, now);
+    else if (b.type === 'tower') drawTower(b, now);
+    else if (b.type === 'wall') drawWall(b);
+    else if (b.type === 'fountain') drawFountain(b, now);
+    else if (b.type === 'workshop') drawWorkshop(b, now);
+    else if (b.type === 'market') drawMarket(b, now);
+    else if (b.type === 'cathedral') drawCathedral(b, now);
+    else if (b.type === 'armory') drawArmory(b, now);
+    else if (b.type === 'ballista') drawBallista(b, now);
+    else if (b.type === 'watchtower') drawWatchtower(b, now);
+    else if (b.type === 'mill') drawMill(b, now);
+    else if (b.type === 'forge') drawForge(b, now);
+    else if (b.type === 'sunAltar') drawSunAltar(b, now);
+    else if (b.type === 'stormSpire') drawStormSpire(b, now);
+    else if (b.type === 'plagueWell') drawPlagueWell(b, now);
+    else if (b.type === 'drumTower') drawDrumTower(b, now);
+    ctx.restore();
+  }
+  // 旗帜：进度 > 0.85 后从旗杆升起
+  if (p > .85) {
+    const up = clamp((p - .85) / .15, 0, 1) * (h * .18);
+    const fx = spread * .62;
+    ctx.strokeStyle = '#3a2c1d'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(fx, -h * .92); ctx.lineTo(fx, -h * .92 - up); ctx.stroke();
+    if (up > 3) {
+      const c = teamColors(b.team);
+      ctx.fillStyle = c.cloth || '#a3372e';
+      ctx.beginPath();
+      ctx.moveTo(fx, -h * .92 - up);
+      ctx.lineTo(fx + 9, -h * .92 - up + 3);
+      ctx.lineTo(fx, -h * .92 - up + 6);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  // 建筑本体上的进度条
+  const bw = Math.max(20, w * 12);
+  const by = -h - 8;
+  ctx.fillStyle = 'rgba(8,10,8,.82)'; ctx.fillRect(-bw / 2 - 1, by - 1, bw + 2, 5);
+  ctx.fillStyle = '#4a7a3a'; ctx.fillRect(-bw / 2, by, bw * p, 3);
+  ctx.fillStyle = 'rgba(190,230,170,.55)'; ctx.fillRect(-bw / 2, by, bw * p, 1);
+}
 function drawBuilding(b, now, ghost = false) {
   const p = mapPos(b.x, b.y);
   ctx.save(); ctx.translate(p.x, p.y);
   if (ghost) ctx.globalAlpha = .5;
-  else if (b.constructed === false) ctx.globalAlpha = .62;
+  if (!ghost && b.constructed === false) {
+    drawConstruction(b, now);
+    ctx.restore();
+    return;
+  }
   if (b.type === 'keep') drawKeep(b, now);
   else if (b.type === 'house') drawHouse(b, now);
   else if (b.type === 'barracks') drawBarracks(b, now);
@@ -6173,6 +6255,9 @@ if (params.get('debug') === '1') {
       dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
       stuckTeleports: S.stuckTeleports || 0,
       stuckPeak: S.stuckPeak || 0,
+      ctest: window.__ctest || null,
+      building: S.buildings.filter(b => b.team === PLAYER && b.type !== 'keep').map(b => ({ t: b.type, done: b.constructed !== false, p: Math.round((b.progress || 0) * 100) })),
+      producers: S.buildings.filter(b => b.team === PLAYER && b.constructed !== false && ['barracks', 'workshop', 'keep'].includes(b.type)).map(b => b.type),
       warpStats: window.__warpStats || null,
       enemyTypes: S.units.filter(u => u.team === ENEMY).reduce((m, u) => (m[u.type] = (m[u.type] || 0) + 1, m), {}),
       pushLog: S.pushLog || [],
@@ -6503,6 +6588,53 @@ const endSpec = params.get('end');
 if (endSpec && S.mode === 'playing') {
   S.stats.kills = 42; S.stats.losses = 3; S.stats.gathered = 2600;
   endGame(endSpec === 'win');
+}
+const constructSpec = params.get('construct');
+if (constructSpec && S.mode === 'playing') {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  const kx = keep ? keep.x : 9, ky = keep ? keep.y : 36;
+  for (const t of constructSpec.split(',')) {
+    if (!B[t]) continue;
+    for (let r = 3; r <= 9; r++) {
+      let done = false;
+      for (let a = 0; a < 16 && !done; a++) {
+        const tx = Math.round(kx + Math.cos(a * Math.PI / 8) * r);
+        const ty = Math.round(ky + Math.sin(a * Math.PI / 8) * r);
+        if (!canPlace(t, tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+        addBuilding(t, tx, ty, PLAYER, { underConstruction: true });
+        done = true;
+      }
+      if (done) break;
+    }
+  }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const ctestSpec = params.get('ctest');
+if (ctestSpec === '1' && S.mode === 'playing') {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  let target = null;
+  if (keep) {
+    for (let r = 3; r <= 8 && !target; r++) {
+      for (let a = 0; a < 16 && !target; a++) {
+        const tx = Math.round(keep.x + Math.cos(a * Math.PI / 8) * r);
+        const ty = Math.round(keep.y + Math.sin(a * Math.PI / 8) * r);
+        if (!canPlace('barracks', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+        target = addBuilding('barracks', tx, ty, PLAYER, { underConstruction: true });
+      }
+    }
+  }
+  window.__ctestOn = true;
+  if (target) {
+    S.clipTrace = [];
+    for (const pr of [0.1, 0.35, 0.6, 0.85, 1]) {
+      target.progress = pr;
+      target.constructed = pr >= 1 ? true : false;
+      render(5000);
+    }
+    target.progress = 0; target.constructed = false;
+    window.__ctest = S.clipTrace.slice();
+  }
+  if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const warpSec = parseFloat(params.get('warp') || '0');
 if (Number.isFinite(warpSec) && warpSec > 0 && S.mode === 'playing') {

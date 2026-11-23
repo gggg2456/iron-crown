@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.4.9：warp 修正与 AIPlayer 观测能力",
-  "releaseName": "铁与王冠 v1.4.9 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.4.9 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.9 改动（观测能力，无玩法变化）\n\n- `?warp` 上限修正：此前「300 秒」实际只模拟 200 秒，现已能真跑 300 秒（旧基线作废）\n- `?debug=1` 增加屏幕浮层：卡住次数/峰值、分离耗时、寻路退化率、单位数、AI 时间线，5 帧刷新\n- `stuckPeak`：同时卡住峰值，含「建筑夹缝里位置合法但被推挤抵消」的情形\n- warp 分段耗时（每 1000 步）与敌方兵种构成，仅调试可见\n- 基线报告：`tools/reports/aip-baseline-v149.md`（两次 300 秒跑的完整序列与对比协议）\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "v1.4.10：建造过程可见（地基→墙体→屋顶三段式施工）",
+  "releaseName": "铁与王冠 v1.4.10 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.4.10 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.10 改动\n\n- **建筑从地基开始长出来**：放置后进入施工，地基与脚手架 → 墙体从下往上砌 → 屋顶与旗帜，本体上方带进度条\n- 施工期间建筑不产出、不出兵、不射击、不加人口；完工那一刻才真正启用（超武也是完工才装备）\n- 只有施工中的建筑走裁剪绘制，建好后回到原路径，性能开销可忽略\n\n**行为变化**：总等待 = 备料时间 + 施工时间（两者都取原 `BUILD_TIME`），兵营合计约 10 秒、箭塔约 8 秒。\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
