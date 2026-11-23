@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.4.6：输入优先级修复（空白取消选中 / 超武瞄准屏蔽命令 / 一次性引导）\n\n- 左键点空地且无目标 → 清空选中；点敌人或金矿仍下命令\n- 超武瞄准时左键只释放超武、屏蔽单位命令；Esc/右键取消；onPointerUp 在瞄准态直接返回\n- 首次造好超武建筑弹一次引导提示\n实测：uiLog={deselect:true, superReleased:true, selectionKept:true}，无报错",
-  "releaseName": "铁与王冠 v1.4.6 · Iron & Crown",
-  "releaseBody": "## 铁与王冠 v1.4.6 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.6 改动\n\n- 点空白取消选中；选中部队时点超武再点地图，只会释放超武、部队不动\n- 超武首次就绪的一次性引导提示\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "v1.4.7 热修：超武可用性 / 卡建筑 / 战鼓台建模 / 入口与文案",
+  "releaseName": "铁与王冠 v1.4.7 · Iron & Crown",
+  "releaseBody": "## 铁与王冠 v1.4.7 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.4.7 热修\n\n- **超武终于能用**：超武建筑落成即自动装备，右下角面板立刻出现并显示冷却；攻城栏也加了第二个入口\n- **单位不再卡在建筑上**：卡死检测改为锚点式（被推挤抖动也能识别），推挤改挑最近空地，推完二次校验，仍卡自动传送\n- **战鼓台有模型了**：补齐 Canvas 手绘分支，顺带核对全部 18 种建筑\n- 删除「敌人已自动起兵」类提示；首波改为「敌方第一波进攻即将到来」，只弹一次\n\n### 既有内容\n\n- 五章剧情战役、新手教学、遭遇战（三阵营/自选地图/风险宝箱）、小超武战鼓台、数字键切页、A* 寻路\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
