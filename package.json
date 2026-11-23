@@ -1,7 +1,7 @@
 {
   "name": "iron-crown",
   "productName": "铁与王冠",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "description": "铁与王冠 · Iron & Crown —— 中世纪「红色警戒」风格即时战略",
   "main": "main.js",
   "author": "Iron Crown",
@@ -9,7 +9,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "package": "electron-packager . IronCrown --platform=win32 --arch=x64 --out=dist --overwrite --prune --icon=web/iron-crown.ico --app-version=1.4.6",
+    "package": "electron-packager . IronCrown --platform=win32 --arch=x64 --out=dist --overwrite --prune --icon=web/iron-crown.ico --app-version=1.4.7",
     "dist": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package.ps1"
   },
   "devDependencies": {

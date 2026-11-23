@@ -20,6 +20,33 @@ const CAMPAIGN_GOLD = 1200;
 // AI 进度表：AI 没有金币经济，只用时间门槛控制发育节奏（三档难度可再分档）
 // trainMul 是「训练间隔倍率」：1.0 = 与玩家同速；>1 = 更慢。先保持 1.0，只靠建筑延迟控制节奏。
 // superDelay 是「工坊建成后再等多少秒」才允许造超武，而不是从开局算。
+// ===== 槽位 + 队伍编号（阶段 1 架构）=====
+// 规则：队伍编号相同 = 盟友，不同 = 敌对；不做两两外交。
+// 每个槽位：{ owner: 'player'|'ai'|'empty', faction, team }，最多 4 个，可 JSON 序列化。
+function defaultSlots(playerFaction) {
+  return [
+    { owner: 'player', faction: playerFaction || 'rose', team: 1 },
+    { owner: 'ai', faction: 'raven', team: 2 },
+    { owner: 'empty', faction: 'raven', team: null },
+    { owner: 'empty', faction: 'raven', team: null }
+  ];
+}
+function slotTeams() {
+  return (S.slots || []).map(x => x.team);
+}
+function isHostileTeam(a, b) {
+  if (a == null || b == null) return false; // 空槽位不参与敌对判定
+  return a !== b;
+}
+function validateSlots(slots) {
+  const errors = [];
+  const filled = (slots || []).filter(x => x && x.owner !== 'empty');
+  if (!filled.some(x => x.owner === 'player')) errors.push('至少需要 1 个玩家槽位');
+  const teams = new Set(filled.map(x => x.team));
+  if (teams.size < 2) errors.push('至少需要 1 个敌对队伍');
+  for (const x of filled) if (!(x.team >= 1 && x.team <= 4)) errors.push('队伍编号必须在 1-4');
+  return errors;
+}
 const AI_PACE = { barracksAt: 10, workshopAt: 90, superDelay: 90, trainMul: 1.0 };
 // 农民征召：临时民兵（不花金币，征召期不产金，20 秒后自动复原，最多同时 3 个）
 const MILITIA = { dmg: 8, hp: 100, range: 1.2, time: 20, max: 3 };
@@ -272,12 +299,31 @@ function unitCostFaction(type) {
 function buildingCostFaction(type) {
   return Math.round((B[type] ? B[type].cost : 0) * modVal('buildCostMul'));
 }
+function superKeyOfBuilding(type) {
+  return Object.keys(SUPERS).find(k => SUPERS[k].building === type) || null;
+}
+function armSuperForBuilding(type) {
+  const key = superKeyOfBuilding(type);
+  if (!key) return null;
+  const sup = SUPERS[key];
+  // 只装备本阵营的超武（阵营已锁死唯一超武，不再要求额外点一次科技卡）
+  const mine = factionOf().super;
+  if (mine && mine !== key) return sup;
+  if (!S.superKey) {
+    S.superKey = key;
+    S.superCd = 0;
+    const techKey = 'super_' + key;
+    if (TECH[techKey]) S.tech[techKey] = true;
+  }
+  updateSuperUI();
+  return sup;
+}
 function superHintOnce(type) {
-  if (S.superHinted) return;
-  const sup = Object.values(SUPERS).find(x => x.building === type);
+  const sup = armSuperForBuilding(type);
   if (!sup) return;
+  if (S.superHinted) return;
   S.superHinted = true;
-  toast('超级武器已就绪：点击右下角图标，再点地图目标位置释放（Esc / 右键取消）', '', sup.icon);
+  toast('超级武器已装备：点击右下角面板，再点地图目标位置释放（Esc / 右键取消）', '', sup.icon);
   Sound.play('horn');
 }
 function buildSecondsFaction(type) {
@@ -1087,6 +1133,7 @@ function addBuilding(type, tx, ty, team) {
     S.aiTimes = S.aiTimes || {};
     if (!S.aiTimes[type]) S.aiTimes[type] = Math.round(S.time);
   }
+  if (team === PLAYER) armSuperForBuilding(type);
   return b;
 }
 function addUnit(type, team, x, y) {
@@ -1196,6 +1243,8 @@ function resetWorld() {
   S.stats = { kills: 0, losses: 0, gathered: 0 };
   const L = currentLevel();
   S.faction = (S.run === 'skirmish' && S.skirmish && FACTIONS[S.skirmish.faction]) ? S.skirmish.faction : 'rose';
+  S.slots = defaultSlots(S.faction);
+  S.slotErrors = validateSlots(S.slots);
   S.supersEnabled = !(S.run === 'skirmish' && S.skirmish) || !!S.skirmish.supers;
   if (S.run === 'skirmish') {
     const pick = S.skirmish && S.skirmish.map;
@@ -4585,6 +4634,8 @@ function renderCards() {
     if (isSuperKey(k)) {
       if (!S.supersEnabled) return false;
       if (!factionSuperMatch(k)) return false;
+      // 超武已改为「建筑落成即装备」，科技卡不再作为入口
+      return false;
     }
     return TECH[k] ? true : isUnlocked(k);
   });
@@ -4820,7 +4871,7 @@ function updateSuperUI() {
 function armSuper() {
   if (S.mode !== 'playing' || S.paused) return;
   const sup = selectedSuper();
-  if (!sup) { toast('需要先建造对应的 T3 超武建筑，并在科技栏选择超级武器', 'warn', 'scroll'); Sound.play('ui'); return; }
+  if (!sup) { toast('尚未装备超级武器：先建成本阵营的 T3 超武建筑（落成即自动装备）', 'warn', 'scroll'); Sound.play('ui'); return; }
   if (S.superCd > 0) { toast(`${sup.name}冷却中：${Math.ceil(S.superCd)} 秒`, 'warn', sup.icon); Sound.play('ui'); return; }
   S.placing = null; S.drag = null;
   S.superAim = !S.superAim;
@@ -6006,7 +6057,13 @@ if (params.get('debug') === '1') {
       riskPicks: S.crateStats ? S.crateStats.riskPicks : 0,
       dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
       stuckTeleports: S.stuckTeleports || 0,
+      slots: S.slots || [],
+      slotErrors: S.slotErrors || [],
       uiLog: S.uiLog || null,
+      superHits: window.__superHits || 0,
+      armLog: S.armLog || [],
+      superHinted: !!S.superHinted,
+      superCd: Math.round((S.superCd || 0) * 100) / 100,
       stuckList: S.units.filter(u => u.team === PLAYER && u.order && (u.stillT || 0) > 1.5 && u.dbgBlocked).map(u => ({ type: u.type, still: Math.round((u.stillT || 0) * 10) / 10, blocked: !!u.dbgBlocked, order: u.order && u.order.type })),
       aiTimes: S.aiTimes || {},
       aiTrace: S.aiTrace || [],
@@ -6251,6 +6308,19 @@ if (uiTest === '1' && S.mode === 'playing') {
     S.uiLog.superReleased = S.superCd > 0;
     S.uiLog.selectionKept = S.selected.length === before;
   }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const castSuperSpec = params.get('castsuper');
+if (castSuperSpec === '1' && S.mode === 'playing') {
+  if (!S.superKey) S.superKey = (FACTIONS[S.faction] || FACTIONS.rose).super;
+  S.superCd = 0;
+  S.superAim = false;
+  const ek = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
+  if (ek && S.superKey) {
+    window.__superHits = applySuperAt(S.superKey, ek.x, ek.y, PLAYER);
+    S.superCd = SUPERS[S.superKey].cd;
+  }
+  updateSuperUI();
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
