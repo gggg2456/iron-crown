@@ -35,7 +35,7 @@
 | `stuckPeak` | 除累计 `stuckTeleports` 外，另记「同时卡住峰值」，条件为「有指令 + 卡顿 >1.5 秒 + （所在格 blocked 或本帧位移 <0.05）」，覆盖建筑夹缝情形 |
 | `enemyTypes` | 调试字段，只记录不判等（AI 训练用 `Math.random`） |
 
-**基线数据见 [tools/reports/aip-baseline-v149.md](tools/reports/aip-baseline-v149.md)**：两次默认配置 300 秒跑的 30 点 `enemyUnits` 完整序列、`aiTimes`、`stuckTeleports`（137/113）与 `stuckPeak`（9/6）、warp 分段耗时、以及 AIPlayer 对比协议（容差 ±2）。
+**当前基线见 [tools/reports/aip-baseline-v161.md](tools/reports/aip-baseline-v161.md)**（v1.6.1 重构前参照；`aip-baseline-v149.md` 已标注为历史参考）：两次默认配置 300 秒跑的 30 点 `enemyUnits` 完整序列、`aiTimes`、`stuckTeleports`（137/113）与 `stuckPeak`（9/6）、warp 分段耗时、以及 AIPlayer 对比协议（容差 ±2）。
 
 
 ## v1.6.0 民心 / 信仰系统

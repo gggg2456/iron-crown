@@ -1963,6 +1963,7 @@ function separateUnits() {
     if (!cell) { cell = []; grid.set(k, cell); }
     cell.push(u);
   }
+  const fanatics = S.units.filter(u => u.type === 'fanatic' && u.hp > 0 && !u.garrisoned);
   const offsets = [[0, 0], [1, 0], [1, 1], [0, 1], [-1, 1]];
   for (const [key, cell] of grid) {
     const parts = key.split(',');
@@ -1985,7 +1986,7 @@ function separateUnits() {
       if (!isFriendlyTeam(a.team, b.team)) {
         const foe = a.team === ENEMY ? a : b;
         const runner = b.team === ENEMY ? b : a;
-        if (S.units.some(f => f.type === 'fanatic' && f.hp > 0 && !f.garrisoned && !isFriendlyTeam(f.team, foe.team) && Math.hypot(f.x - foe.x, f.y - foe.y) < 2)) push *= 3;
+        if (fanatics.length && fanatics.some(f => !isFriendlyTeam(f.team, foe.team) && Math.hypot(f.x - foe.x, f.y - foe.y) < 2)) push *= 3;
       }
           const nx = dx / d, ny = dy / d;
           a.x -= nx * push; a.y -= ny * push;
@@ -3523,7 +3524,24 @@ function update(dt) {
     if ((u.stillT || 0) <= 1.5) continue;
     if (u.dbgBlocked || (u._movedThisFrame || 0) < .05) _stuckNow++;
   }
-  if (_stuckNow > (S.stuckPeak || 0)) S.stuckPeak = _stuckNow;
+  if (_stuckNow > (S.stuckPeak || 0)) {
+    S.stuckPeak = _stuckNow;
+    const stuckUnits = [];
+    for (const u of S.units) {
+      if (u.hp <= 0 || u.garrisoned) continue;
+      if (!u.order && !u.target) continue;
+      if ((u.stillT || 0) <= 1.5) continue;
+      if (!(u.dbgBlocked || (u._movedThisFrame || 0) < .05)) continue;
+      stuckUnits.push({ t: u.type, team: u.team, tile: [Math.floor(u.x), Math.floor(u.y)] });
+    }
+    S.stuckPeakInfo = {
+      t: Math.round(S.time),
+      peak: _stuckNow,
+      units: stuckUnits.slice(0, 12),
+      near: S.buildings.filter(b => stuckUnits.some(su => Math.hypot(b.x - (su.tile[0] + .5), b.y - (su.tile[1] + .5)) < 5))
+        .map(b => ({ t: b.type, team: b.team, at: [b.tx, b.ty], size: [b.w, b.d] }))
+    };
+  }
   updateTraining(dt);
   updateConstruction(dt);
   updateTutorial(dt);
@@ -6515,6 +6533,7 @@ if (params.get('debug') === '1') {
       dogPicks: S.crateStats ? S.crateStats.dogPicks : 0,
       stuckTeleports: S.stuckTeleports || 0,
       stuckPeak: S.stuckPeak || 0,
+      stuckPeakInfo: S.stuckPeakInfo || null,
       faith: S.faith || null,
       explodeTest: window.__before === undefined ? null : { before: window.__before, after: window.__after, hp: window.__hp, keep: [window.__bhp0, window.__bhp1] },
       spyTest: window.__spyGold0 === undefined ? null : { gold: [window.__spyGold0, window.__spyGold1], chest: [window.__spyChest0, window.__spyChest1], alive: window.__spyAlive },
