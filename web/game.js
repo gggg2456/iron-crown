@@ -347,7 +347,7 @@ const CAVALRY_TYPES = new Set(['knight', 'lancer']);
 const TABS = {
   build: ['house', 'barracks', 'market', 'mill', 'armory', 'workshop', 'forge', 'cathedral', 'sunAltar', 'stormSpire', 'plagueWell', 'drumTower'],
   units: ['peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'halberdier', 'priest', 'dog', 'lancer', 'javelineer'],
-  siege: ['ram', 'catapult', 'scorpion', 'baseVehicle'],
+  siege: ['ram', 'catapult', 'scorpion', 'baseVehicle', 'super_entry'],
   defense: ['tower', 'watchtower', 'wall', 'fountain', 'ballista', 'super_fire', 'super_storm', 'super_plague'],
   tech: ['logistics', 'drill', 'steel', 'plate', 'royal', 'strategy_banner', 'strategy_march', 'strategy_siege']
 };
@@ -2945,7 +2945,8 @@ function launchWave() {
   }
   showBanner(S.wave.n);
   Sound.play('horn');
-  toast(`黑鸦第 ${S.wave.n} 波攻势：${desired} 名敌军离开要塞`, 'warn', 'shield');
+  if (!S.waveHinted) { S.waveHinted = true; toast('敌方第一波进攻即将到来', 'warn', 'shield'); }
+  else if (S.wave.n % 3 === 0) toast('黑鸦第 ' + S.wave.n + ' 波攻势：' + desired + ' 名敌军离开要塞', 'warn', 'shield');
   S.wave.timer = Math.max(26, diff.every + (L.everyAdd || 0) - S.wave.n * 1.5);
 }
 /* ===== 7. AI ===== */
@@ -3004,7 +3005,6 @@ function enemyAssault() {
     u.target = null;
   }
   S.enemy.attackTimer = Math.max(14, diff.every * .55) + rnd(0, 7);
-  toast('黑鸦军团开始自由出击', 'warn', 'shield');
   Sound.play('hornlow');
 }
 function updateEnemySuper(dt) {
@@ -3662,6 +3662,43 @@ function drawPlagueWell(b, now) {
     ctx.beginPath(); ctx.arc(x, y, 3 + i, 0, 7); ctx.fill();
   }
 }
+function drawDrumTower(b, now) {
+  const c = teamColors(b.team);
+  shadow(ctx, 30, 13, .24);
+  // 木台
+  ctx.fillStyle = '#4a3a28';
+  ctx.beginPath();
+  ctx.moveTo(-20, -4); ctx.lineTo(0, 4); ctx.lineTo(20, -4); ctx.lineTo(0, -12);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#6b5337';
+  ctx.beginPath();
+  ctx.moveTo(-20, -4); ctx.lineTo(0, 4); ctx.lineTo(0, 7); ctx.lineTo(-20, -1);
+  ctx.closePath(); ctx.fill();
+  // 两侧立柱
+  ctx.strokeStyle = '#3a2c1d'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-13, -8); ctx.lineTo(-13, -26); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(13, -8); ctx.lineTo(13, -26); ctx.stroke();
+  // 大鼓
+  const beat = Math.max(0, Math.sin(now * 2.4)) * 1.6;
+  ctx.fillStyle = c.wood || '#8d5a3c';
+  ctx.beginPath(); ctx.ellipse(0, -20 - beat, 12, 13, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(238,222,190,.92)';
+  ctx.beginPath(); ctx.ellipse(0, -20 - beat, 8.5, 10, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(90,60,40,.55)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.ellipse(0, -20 - beat, 8.5, 10, 0, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-8, -24 - beat); ctx.lineTo(8, -24 - beat); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-8, -16 - beat); ctx.lineTo(8, -16 - beat); ctx.stroke();
+  // 阵营色旗
+  const wave = Math.sin(now * 3) * 2;
+  ctx.fillStyle = c.cloth || '#b9483a';
+  ctx.beginPath();
+  ctx.moveTo(-13, -26); ctx.lineTo(-13, -38);
+  ctx.lineTo(-2 + wave, -35); ctx.lineTo(-13, -31);
+  ctx.closePath(); ctx.fill();
+  // 顶部横梁
+  ctx.strokeStyle = '#3a2c1d'; ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(-15, -27); ctx.lineTo(15, -27); ctx.stroke();
+}
 function drawBuilding(b, now, ghost = false) {
   const p = mapPos(b.x, b.y);
   ctx.save(); ctx.translate(p.x, p.y);
@@ -3684,6 +3721,7 @@ function drawBuilding(b, now, ghost = false) {
   else if (b.type === 'sunAltar') drawSunAltar(b, now);
   else if (b.type === 'stormSpire') drawStormSpire(b, now);
   else if (b.type === 'plagueWell') drawPlagueWell(b, now);
+  else if (b.type === 'drumTower') drawDrumTower(b, now);
   ctx.restore();
 
   // health bar in world coords
@@ -4651,6 +4689,10 @@ function renderTabs() {
   $$('#command-tabs .tab').forEach(tab => tab.classList.toggle('active', tab.dataset.tab === S.tab));
 }
 function cardDef(key) {
+  if (key === 'super_entry') {
+    const sup = selectedSuper() || SUPERS[factionOf().super] || SUPERS.fire;
+    return { type: 'super', def: { name: sup.name, icon: sup.icon, cost: 0 }, key };
+  }
   if (B[key]) return { type: 'building', def: B[key], key };
   if (TECH[key]) return { type: 'tech', def: TECH[key], key };
   return { type: 'unit', def: U[key], key };
@@ -4662,6 +4704,7 @@ function isSuperKey(key) {
 function renderCards() {
   const all = TABS[S.tab];
   const keys = all.filter(k => {
+    if (k === 'super_entry') return !!S.supersEnabled;
     if (isSuperKey(k)) {
       if (!S.supersEnabled) return false;
       if (!factionSuperMatch(k)) return false;
@@ -4686,7 +4729,7 @@ function renderCards() {
       ${c.type === 'tech' ? `<span class="cmd-tier">${def.tier}</span>` : (c.type === 'building' ? `<span class="cmd-tier">T${buildingTier(key)}</span>` : '')}
       <svg class="cmd-icon"><use href="#i-${def.icon || key}"></use></svg>
       <span class="cmd-name">${def.name}</span>
-      <span class="cmd-cost cost-gold"><i></i>${cost}</span>
+      ${c.type === 'super' ? `<span class="cmd-cost">${S.superKey ? (S.superCd > 0 ? Math.ceil(S.superCd) + 's' : '就绪') : '未装备'}</span>` : `<span class="cmd-cost cost-gold"><i></i>${cost}</span>`}
       ${c.type === 'unit' && def.pop > 0 ? `<span class="queue-badge" style="display:none">${def.pop}</span>` : ''}
     </button>`;
   }).join('');
@@ -4782,6 +4825,7 @@ function showTooltip(key, btn) {
 function hideTooltip() { if (els.tip) els.tip.hidden = true; }
 function onCard(key, ev) {
   if (S.mode !== 'playing' || S.paused) return;
+  if (key === 'super_entry') { armSuper(); return; }
   if (TECH[key]) { researchTech(key); return; }
   if (!isUnlocked(key)) { toast('该军备尚未解锁，通关章节后获得', 'warn', 'scroll'); Sound.play('ui'); return; }
   if (B[key]) queueBuilding(key);
@@ -4897,6 +4941,8 @@ function updateSuperUI() {
   }
   const hintEl = hud.querySelector('.sh-hint');
   if (hintEl) hintEl.textContent = cooling ? '充能中' : (S.superAim ? '左键选点 · 右键取消' : '点击释放');
+  const supCardEl = document.querySelector('#cards [data-key="super_entry"] .cmd-cost');
+  if (supCardEl) supCardEl.textContent = S.superKey ? (cooling ? Math.ceil(S.superCd) + 's' : '就绪') : '未装备';
   updateMiniUI();
 }
 function armSuper() {
@@ -6378,6 +6424,12 @@ if (denseSpec === '1' && S.mode === 'playing') {
       u.order = { type: 'move', x: keep.x - Math.cos(a) * 5.5, y: keep.y - Math.sin(a) * 5.5 };
     }
   }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const tabSpec = params.get('tab');
+if (tabSpec && TABS[tabSpec] && S.mode === 'playing') {
+  S.tab = tabSpec;
+  renderTabs(); renderCards();
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
