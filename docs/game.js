@@ -728,6 +728,11 @@ function generateTerrain() {
     }
   }
 }
+function enemyFactionName() {
+  const slot = (S.slots || []).find(x => x && x.owner === 'ai');
+  const f = slot && FACTIONS[slot.faction];
+  return f ? f.name : '敌方';
+}
 function teamName(t) { return t === PLAYER ? factionOf().name : t === ALLY ? '青杉盟军' : '黑鸦'; }
 function bname(b) { return b.team === ENEMY ? B[b.type].enemyName : (b.team === ALLY ? '盟军·' : '') + B[b.type].name; }
 function uname(u) { return u.team === ENEMY ? U[u.type].enemyName : (u.team === ALLY ? '盟军·' : '') + U[u.type].name; }
@@ -2946,7 +2951,7 @@ function launchWave() {
   showBanner(S.wave.n);
   Sound.play('horn');
   if (!S.waveHinted) { S.waveHinted = true; toast('敌方第一波进攻即将到来', 'warn', 'shield'); }
-  else if (S.wave.n % 3 === 0) toast('黑鸦第 ' + S.wave.n + ' 波攻势：' + desired + ' 名敌军离开要塞', 'warn', 'shield');
+  else if (S.wave.n % 3 === 0) toast(enemyFactionName() + '第 ' + S.wave.n + ' 波攻势：' + desired + ' 名敌军离开要塞', 'warn', 'shield');
   S.wave.timer = Math.max(26, diff.every + (L.everyAdd || 0) - S.wave.n * 1.5);
 }
 /* ===== 7. AI ===== */
@@ -3118,8 +3123,8 @@ function castEnemySuper() {
   const target = enemySuperTarget();
   if (!target) { S.enemySuper.timer = 15; return; }
   const hits = applySuperAt(S.enemySuper.key, target.x, target.y, ENEMY);
-  toast(`黑鸦发动「${sup.name}」！${hits ? `命中 ${hits} 个目标` : '落点偏移'}`, 'warn', sup.icon);
-  floatText(target.x, target.y - 1, `黑鸦 · ${sup.name}`, '#ff9b8a');
+  toast(`${enemyFactionName()}发动「${sup.name}」！${hits ? `命中 ${hits} 个目标` : '落点偏移'}`, 'warn', sup.icon);
+  floatText(target.x, target.y - 1, `${enemyFactionName()} · ${sup.name}`, '#ff9b8a');
   Sound.play('hornlow'); Sound.play('boom');
   S.enemySuper.timer = sup.cd + 25;
 }
@@ -3220,7 +3225,7 @@ function updateSecondAI(dt) {
     u.target = null;
   }
   S.secondAI.attackTimer = 24;
-  toast('第二支黑鸦军团发起进攻', 'warn', 'shield');
+  toast(enemyFactionName() + '第二军团发起进攻', 'warn', 'shield');
   Sound.play('hornlow');
 }
 function deployEnemyBaseVehicle(u) {
@@ -3830,7 +3835,7 @@ function spawnRaidAt(x, y, count) {
     if (keep) { u.order = { type: 'attackMove', x: keep.x, y: keep.y }; u.target = null; }
   }
   burst(x, y, 'fire', 26);
-  toast('风险箱炸开：黑鸦伏兵从四周涌出！', 'warn', 'shield');
+  toast('风险箱炸开：' + enemyFactionName() + '伏兵从四周涌出！', 'warn', 'shield');
   Sound.play('boom');
 }
 function grantCrate(c) {
@@ -3843,7 +3848,7 @@ function grantCrate(c) {
     S.crateStats.riskPicks++;
     S.gold += 800;
     floatText(c.x, c.y, '+800 金币 · 伏兵！', '#e05a4a');
-    toast('风险箱：获得 800 金币，但附近刷出了黑鸦伏兵', 'warn', 'coin');
+    toast('风险箱：获得 800 金币，但附近刷出了' + enemyFactionName() + '伏兵', 'warn', 'coin');
     spawnRaidAt(c.x, c.y, Math.min(8, 4 + S.wave.n));
     S.crateStats.aborts = S.crateStats.aborts;
     burst(c.x, c.y, 'gold', 14);
@@ -3922,8 +3927,8 @@ function grantCrateEnemy(c) {
     u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .2);
     healed++;
   }
-  floatText(c.x, c.y, '黑鸦拾取补给', '#c9a0a0');
-  toast('黑鸦部队抢先捡走了一个奖励箱', 'warn', 'shield');
+  floatText(c.x, c.y, enemyFactionName() + '拾取补给', '#c9a0a0');
+  toast(enemyFactionName() + '部队抢先捡走了一个奖励箱', 'warn', 'shield');
   Sound.play('ui');
   burst(c.x, c.y, 'dust', 10);
   return healed;
@@ -5890,7 +5895,7 @@ function playIntroToasts() {
   const L = currentLevel();
   if (S.run === 'skirmish') {
     setTimeout(() => toast(`遭遇战 · ${(MAP_THEMES[S.mapTheme] || MAP_THEMES.border).name}｜起始金币 ${S.gold}｜初始步兵 ${(S.skirmish && S.skirmish.inf) || 0}｜超级武器${S.supersEnabled ? '启用' : '禁用'}`, 'warn', 'shield'), 700);
-    setTimeout(() => toast('摧毁黑鸦主堡即可取胜；地图上会刷新奖励箱，派兵去捡。', '', 'scroll'), 1700);
+    setTimeout(() => toast('摧毁敌方主堡即可取胜；地图上会刷新奖励箱，派兵去捡。', '', 'scroll'), 1700);
     if (S.allyEnabled) setTimeout(() => toast('青杉盟军已在远处建立营地：他们会自行出兵、进攻黑鸦，并共享视野。', '', 'shield'), 3200);
     return;
   }
@@ -6142,6 +6147,7 @@ if (params.get('debug') === '1') {
       armLog: S.armLog || [],
       superHinted: !!S.superHinted,
       superCd: Math.round((S.superCd || 0) * 100) / 100,
+      enemyName: enemyFactionName(),
       stuckList: S.units.filter(u => u.team === PLAYER && u.order && (u.stillT || 0) > 1.5 && u.dbgBlocked).map(u => ({ type: u.type, still: Math.round((u.stillT || 0) * 10) / 10, blocked: !!u.dbgBlocked, order: u.order && u.order.type })),
       aiTimes: S.aiTimes || {},
       aiTrace: S.aiTrace || [],
@@ -6430,6 +6436,12 @@ const tabSpec = params.get('tab');
 if (tabSpec && TABS[tabSpec] && S.mode === 'playing') {
   S.tab = tabSpec;
   renderTabs(); renderCards();
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const aiFactionSpec = params.get('aifaction');
+if (aiFactionSpec && FACTIONS[aiFactionSpec] && S.mode === 'playing') {
+  const slot = (S.slots || []).find(x => x && x.owner === 'ai');
+  if (slot) slot.faction = aiFactionSpec;
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
