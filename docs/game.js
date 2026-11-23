@@ -247,6 +247,12 @@ const U = {
     cd: 1.05, aggro: 6.2, pop: 2, cost: 120, time: 7, h: 34, producer: 'barracks', icon: 'knight',
     role: '轻装骑兵', desc: '比重装骑士便宜，冲锋快，专门追杀弓手与农民。'
   },
+  fanatic: {
+    name: '狂信徒', enemyName: '黑鸦狂信徒', hp: 50, speed: 2.2, dmg: 0, range: 1,
+    cd: 1, aggro: 6, pop: 1, cost: 40, time: 8, h: 24, producer: 'barracks', icon: 'shield',
+    factionOnly: 'raven',
+    role: '自爆单位', desc: '抱着火药桶冲向敌群，进入 1 格后 0.5 秒引爆：对单位 60、对建筑 30（减半）。引线期间被击杀则不会爆炸；选中按 D 可原地引爆。'
+  },
   javelineer: {
     name: '掷矛手', enemyName: '黑鸦掷矛手', hp: 70, speed: 2.2, dmg: 9, range: 3.6,
     cd: 1.5, aggro: 5.5, pop: 1, cost: 55, time: 3, h: 24, producer: 'barracks', icon: 'archer',
@@ -356,7 +362,7 @@ const UNIT_BONUS = {
 const CAVALRY_TYPES = new Set(['knight', 'lancer']);
 const TABS = {
   build: ['house', 'barracks', 'market', 'mill', 'armory', 'workshop', 'forge', 'cathedral', 'sunAltar', 'stormSpire', 'plagueWell', 'drumTower'],
-  units: ['peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'halberdier', 'priest', 'dog', 'lancer', 'javelineer'],
+  units: ['peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'halberdier', 'priest', 'dog', 'lancer', 'javelineer', 'fanatic'],
   siege: ['ram', 'catapult', 'scorpion', 'baseVehicle', 'super_entry'],
   defense: ['tower', 'watchtower', 'wall', 'fountain', 'ballista', 'super_fire', 'super_storm', 'super_plague'],
   tech: ['logistics', 'drill', 'steel', 'plate', 'royal', 'strategy_banner', 'strategy_march', 'strategy_siege']
@@ -432,7 +438,7 @@ const VISION_B = {
   mill: 7, forge: 8, sunAltar: 9, stormSpire: 10, plagueWell: 9, drumTower: 9
 };
 
-const BASE_UNLOCKED = ['house', 'barracks', 'workshop', 'market', 'cathedral', 'tower', 'wall', 'fountain', 'peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'ram', 'catapult', 'scorpion', 'baseVehicle', 'mill', 'forge', 'sunAltar', 'stormSpire', 'plagueWell', 'watchtower', 'drumTower', 'dog', 'lancer', 'javelineer'];
+const BASE_UNLOCKED = ['house', 'barracks', 'workshop', 'market', 'cathedral', 'tower', 'wall', 'fountain', 'peasant', 'spearman', 'swordsman', 'crossbowman', 'archer', 'knight', 'hero', 'ram', 'catapult', 'scorpion', 'baseVehicle', 'mill', 'forge', 'sunAltar', 'stormSpire', 'plagueWell', 'watchtower', 'drumTower', 'dog', 'lancer', 'javelineer', 'fanatic'];
 const LEVELS = [
   {
     name: '边境劫掠', trait: '掠夺成性',
@@ -1969,7 +1975,12 @@ function separateUnits() {
           const min = unitRadius(a) + unitRadius(b);
           if (d >= min) continue;
           if (d < .0001) { a.x -= .02; b.x += .02; continue; }
-          const push = (min - d) * .55;
+          let push = (min - d) * .55;
+      if (!isFriendlyTeam(a.team, b.team)) {
+        const foe = a.team === ENEMY ? a : b;
+        const runner = b.team === ENEMY ? b : a;
+        if (S.units.some(f => f.type === 'fanatic' && f.hp > 0 && !f.garrisoned && !isFriendlyTeam(f.team, foe.team) && Math.hypot(f.x - foe.x, f.y - foe.y) < 2)) push *= 3;
+      }
           const nx = dx / d, ny = dy / d;
           a.x -= nx * push; a.y -= ny * push;
           b.x += nx * push; b.y += ny * push;
@@ -2153,6 +2164,25 @@ function shoot(u, target, dmg, team) {
   else spawnArrow(u.x, u.y, u.kind === 'building' ? B[u.type].h * .7 : U[u.type].h * .65, target, power, team, u);
   Sound.play('bow');
 }
+// 狂信徒自爆：半径 1.5 格，对单位 60、对建筑 30（减半）
+function explodeAt(x, y, team, radius, unitDmg, buildDmg) {
+  burst(x, y, 'dust', 18);
+  burst(x, y, 'fire', 14);
+  burst(x, y, 'spark', 10);
+  floatText(x, y - .6, '自爆', '#ff9b5a');
+  if (S.shakeOn) S.shake = Math.min(2.4, (S.shake || 0) + 1.2);
+  for (const e of [...S.units]) {
+    if (e.hp <= 0 || e.garrisoned || isFriendlyTeam(e.team, team)) continue;
+    if (Math.hypot(e.x - x, e.y - y) > radius) continue;
+    damage(e, unitDmg, null);
+  }
+  for (const b of [...S.buildings]) {
+    if (b.hp <= 0 || isFriendlyTeam(b.team, team)) continue;
+    if (distanceTo({ x, y }, b) > radius + Math.max(b.w, b.d) * .5) continue;
+    damage(b, buildDmg, null);
+  }
+  Sound.play('boom');
+}
 function heroCleave(u, target) {
   const radius = 2.1;
   burst(target.x, target.y, 'dust', 16);
@@ -2166,6 +2196,12 @@ function heroCleave(u, target) {
   Sound.play('boom');
 }
 function engage(u, target, dt) {
+  if (u.type === 'fanatic') {
+    const d0 = Math.hypot(target.x - u.x, target.y - u.y);
+    if (d0 > 1) moveTowards(u, target.x, target.y, dt);
+    u.moving = d0 > 1;
+    return;
+  }
   if (!target || target.hp <= 0) { u.target = null; return; }
   const range = (u.militiaT > 0 ? MILITIA.range : U[u.type].range) + (u.team === PLAYER ? unitRangeFactionAdd(u.type) : 0) + (target.kind === 'building' ? .8 : 0);
   const d = distanceTo(u, target);
@@ -2215,6 +2251,36 @@ function updateUnit(u, dt) {
       pushStuckLog(u, free);
       u.x = free.x; u.y = free.y; u.path = null; u.pathGoal = null;
       S.stuckTeleports = (S.stuckTeleports || 0) + 1;
+    }
+  }
+  if (u.type === 'fanatic') {
+    if (u.fuseT > 0) {
+      u.fuseT -= dt;
+      if (u.fuseT <= 0) {
+        explodeAt(u.x, u.y, u.team, 1.5, 80, 30);
+        u.hp = 0;
+        kill(u);
+        return;
+      }
+    } else if (u.manualFuse) {
+      u.fuseT = .5; u.manualFuse = false;
+    } else {
+      let nd = Infinity, nx = 0, ny = 0;
+      for (const e of S.units) {
+        if (e.hp <= 0 || e.garrisoned || isFriendlyTeam(e.team, u.team)) continue;
+        const d = Math.hypot(e.x - u.x, e.y - u.y);
+        if (d < nd) { nd = d; nx = e.x; ny = e.y; }
+      }
+      for (const b of S.buildings) {
+        if (b.hp <= 0 || isFriendlyTeam(b.team, u.team)) continue;
+        const d = distanceTo(u, b);
+        if (d < nd) { nd = d; nx = b.x; ny = b.y; }
+      }
+      if (nd <= 1) {
+        u.fuseT = .5;
+        Sound.play('ui');
+        floatText(u.x, u.y - .8, '引线！', '#ff6a4a');
+      }
     }
   }
   u.attackCd -= dt;  u.flash = Math.max(0, u.flash - dt);
@@ -2624,6 +2690,8 @@ function heroInProduction() {
 function tryTrain(type, n = 1) {
   if (S.mode !== 'playing' || S.paused || S.ended) return 0;
   const def = U[type];
+  if (!def) return 0;
+  if (def.factionOnly && def.factionOnly !== S.faction) { toast('该单位只属于特定阵营', 'warn', 'sword'); Sound.play('ui'); return 0; }
   const cat = def.producer;
   const line = S.prod[cat];
   if (!line) return 0;
@@ -2697,6 +2765,13 @@ function updateTraining(dt) {
 /* ------------- building placement ------------- */
 function militiaCount() {
   return S.units.filter(u => u.team === PLAYER && u.militiaT > 0).length;
+}
+function detonateFanatics() {
+  const list = S.selected.filter(u => u.type === 'fanatic' && u.hp > 0 && !u.garrisoned);
+  if (!list.length) { toast('先选中狂信徒再按 D 原地引爆', 'warn', 'fire'); Sound.play('ui'); return; }
+  for (const u of list) { if (!(u.fuseT > 0)) u.manualFuse = true; }
+  toast(list.length + ' 名狂信徒点燃引线，0.5 秒后引爆', 'warn', 'fire');
+  Sound.play('hornlow');
 }
 function tryMilitia() {
   if (S.mode !== 'playing' || S.paused) return;
@@ -4446,6 +4521,28 @@ function drawUnit(u, now) {
         ctx.fillStyle = '#b18b54';
         ctx.beginPath(); ctx.ellipse(-7, -14 - bob, 4, 5, -.2, 0, 7); ctx.fill();
       }
+    } else if (u.type === 'fanatic') {
+      const fuse = u.fuseT > 0;
+      const blink = (Math.sin(now * (fuse ? 30 : 12)) + 1) * .5;
+      // 火药桶
+      ctx.fillStyle = '#4a3826';
+      ctx.fillRect(-7, -16 - bob, 14, 13);
+      ctx.fillStyle = '#6b5133';
+      ctx.fillRect(-7, -16 - bob, 14, 4);
+      ctx.strokeStyle = '#2b2016'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-7, -11 - bob); ctx.lineTo(7, -11 - bob); ctx.stroke();
+      // 身体（瘦小）
+      ctx.fillStyle = '#3a3a44';
+      ctx.beginPath(); ctx.arc(0, -22 - bob, 4.6, 0, 7); ctx.fill();
+      ctx.fillStyle = '#b08968';
+      ctx.beginPath(); ctx.arc(0, -25 - bob, 3.2, 0, 7); ctx.fill();
+      // 引线火花
+      ctx.fillStyle = 'rgba(255,' + Math.round(120 + 100 * blink) + ',60,' + (0.55 + 0.45 * blink) + ')';
+      ctx.beginPath(); ctx.arc(0, -30 - bob, fuse ? 3.2 : 2, 0, 7); ctx.fill();
+      if (blink > .6) {
+        ctx.strokeStyle = 'rgba(255,200,120,.8)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(0, -33 - bob); ctx.lineTo(-2, -36 - bob); ctx.moveTo(0, -33 - bob); ctx.lineTo(2, -37 - bob); ctx.stroke();
+      }
     } else if (u.type === 'assassin') {
       ctx.fillStyle = '#23212c';
       ctx.beginPath(); ctx.arc(0, -29 - bob, 6.4, Math.PI, 0); ctx.fill();
@@ -4870,6 +4967,7 @@ function renderCards() {
       // 超武已改为「建筑落成即装备」，科技卡不再作为入口
       return false;
     }
+    if (k === 'fanatic' && S.faction !== 'raven') return false;
     return TECH[k] ? true : isUnlocked(k);
   });
   if (!keys.length) {
@@ -5227,7 +5325,7 @@ function updateSelectionPanel(force = false) {
         <div class="sel-title"><strong>${uname(u)}</strong><span>${def.role} · ${status}</span></div>
       </div>
       <div class="sel-hp"><i style="width:${hp}%"></i><span>${Math.ceil(u.hp)} / ${u.maxHp}</span></div>
-      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.buffT > 0 ? `<div class="sel-extra"><b>伏击</b><span>剩余 ${u.buffT.toFixed(1)} 秒 · 移速 +20% / 伤害 +15%</span></div>` : (u.fatigueT > 0 ? `<div class="sel-extra"><b>疲惫</b><span>剩余 ${u.fatigueT.toFixed(1)} 秒 · 移速 −10%</span></div>` : '')}${u.militiaT > 0 ? `<div class="sel-extra"><b>民兵</b><span>剩余 ${Math.ceil(u.militiaT)} 秒 · 征召期间不采集</span></div>` : ''}${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
+      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.buffT > 0 ? `<div class="sel-extra"><b>伏击</b><span>剩余 ${u.buffT.toFixed(1)} 秒 · 移速 +20% / 伤害 +15%</span></div>` : (u.fatigueT > 0 ? `<div class="sel-extra"><b>疲惫</b><span>剩余 ${u.fatigueT.toFixed(1)} 秒 · 移速 −10%</span></div>` : '')}${u.type === 'fanatic' ? `<div class="sel-extra"><b>自爆</b><span>${u.fuseT > 0 ? '引线中 ' + u.fuseT.toFixed(1) + ' 秒' : '按 D 原地引爆 · 进入敌人 1 格自动引爆（引线 0.5 秒可被打断）'}</span></div>` : ''}${u.militiaT > 0 ? `<div class="sel-extra"><b>民兵</b><span>剩余 ${Math.ceil(u.militiaT)} 秒 · 征召期间不采集</span></div>` : ''}${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
       <div class="sel-extra"><b>战功 · ${RANKS[u.rank]}</b><span>${u.kills} 次击杀${u.rank < 3 ? ` · ${Math.ceil(u.xp)}/${u.rank === 1 ? 100 : 260} 经验` : ' · 已达最高军衔'}</span></div>`;
     } else {
       const groups = {};
@@ -6029,6 +6127,7 @@ function onKeyDown(e) {
     toast(S.forceAim ? '强制攻击：左键选择任意单位或建筑（包括友军），右键取消' : '已取消强制攻击', '', 'sword');
     return;
   }
+  if (k === 'd') { detonateFanatics(); return; }
   if (k === 'v') { tryMilitia(); return; }
   if (k === 'r' && S.selectedBuilding) { repairBuilding(S.selectedBuilding); return; }
   if (k === 'g' && S.selectedBuilding) { ungarrison(S.selectedBuilding); return; }
@@ -6336,6 +6435,8 @@ if (params.get('debug') === '1') {
       stuckTeleports: S.stuckTeleports || 0,
       stuckPeak: S.stuckPeak || 0,
       faith: S.faith || null,
+      explodeTest: window.__before === undefined ? null : { before: window.__before, after: window.__after, hp: window.__hp, keep: [window.__bhp0, window.__bhp1] },
+      fanatics: S.units.filter(u => u.type === 'fanatic').map(u => ({ team: u.team, hp: Math.round(u.hp), fuse: Math.round((u.fuseT || 0) * 100) / 100 })),
       faithEff: { def: Math.round(FAITH_RATE.defense(faithRatio()) * 1000) / 1000, train: Math.round(FAITH_RATE.train(faithRatio()) * 1000) / 1000, sup: Math.round(FAITH_RATE.super(faithRatio()) * 1000) / 1000 },
       ctest: window.__ctest || null,
       building: S.buildings.filter(b => b.team === PLAYER && b.type !== 'keep').map(b => ({ t: b.type, done: b.constructed !== false, p: Math.round((b.progress || 0) * 100) })),
@@ -6645,6 +6746,36 @@ const aiFactionSpec = params.get('aifaction');
 if (aiFactionSpec && FACTIONS[aiFactionSpec] && S.mode === 'playing') {
   const slot = (S.slots || []).find(x => x && x.owner === 'ai');
   if (slot) slot.faction = aiFactionSpec;
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const explodeTest = params.get('explodetest');
+if (explodeTest === '1' && S.mode === 'playing') {
+  const ek = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
+  if (ek) {
+    const ax = ek.x + 4, ay = ek.y + 4;
+    for (let i = 0; i < 3; i++) addUnit('archer', ENEMY, ax + i * .6, ay);
+    window.__before = S.units.filter(u => u.team === ENEMY).length;
+    explodeAt(ax + .6, ay, PLAYER, 1.5, 80, 30);
+    window.__after = S.units.filter(u => u.team === ENEMY).length;
+    window.__hp = S.units.filter(u => u.team === ENEMY && u.type === 'archer').map(u => Math.round(u.hp));
+    window.__bhp0 = Math.round(ek.hp);
+    explodeAt(ek.x, ek.y, PLAYER, 1.5, 80, 30);
+    window.__bhp1 = Math.round(ek.hp);
+  }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const fanaticTest = params.get('fanatictest');
+if (fanaticTest && S.mode === 'playing') {
+  const ek = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
+  if (ek) {
+    const ax = ek.x + 4, ay = ek.y + 4;
+    for (let i = 0; i < 3; i++) addUnit('archer', ENEMY, ax + i * .8, ay);
+    const f = addUnit('fanatic', PLAYER, ax + 2.2, ay + .4);
+    f.order = { type: 'move', x: ax, y: ay };
+    if (fanaticTest === 'building') f.order = { type: 'move', x: ek.x, y: ek.y };
+    if (fanaticTest === 'fuse') { f.fuseT = .5; f.hp = 0; kill(f); }
+    if (fanaticTest === 'manual') { S.selected = [f]; detonateFanatics(); }
+  }
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
