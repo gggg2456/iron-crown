@@ -3,6 +3,9 @@
 (() => {
 'use strict';
 
+const TOUCH_UI = (window.matchMedia && matchMedia('(pointer: coarse)').matches)
+  || /[?&]mobile=1/.test(location.search)
+  || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -636,7 +639,7 @@ const mini = $('#minimap');
 const mctx = mini.getContext('2d');
 const fogCanvas = document.createElement('canvas');
 const fogCtx = fogCanvas.getContext('2d');
-let DPR = Math.min(2, window.devicePixelRatio || 1);
+let DPR = Math.min(TOUCH_UI ? 1.5 : 2, window.devicePixelRatio || 1);
 let VW = innerWidth, VH = innerHeight;
 
 /* ===== 2. GAME STATE ===== */
@@ -5362,6 +5365,7 @@ function renderQueue() {
   }
   els.queue.innerHTML = rows.length ? rows.join('') : `<div class="queue-line"><span class="queue-label">产线空闲</span></div>`;
 }
+if (TOUCH_UI) document.body.classList.add('touch-ui');
 function updateHud(force = false) {
   if (!els.gold) return;
   const g = Math.floor(S.gold), p = popUsed(), cap = popCap(), a = armyCount();
@@ -5913,7 +5917,7 @@ function sellBuilding(b) {
 
 /* ------------- events ------------- */
 function resize() {
-  DPR = Math.min(2, window.devicePixelRatio || 1);
+  DPR = Math.min(TOUCH_UI ? 1.5 : 2, window.devicePixelRatio || 1);
   VW = innerWidth; VH = innerHeight;
   canvas.width = Math.floor(VW * DPR); canvas.height = Math.floor(VH * DPR);
   canvas.style.width = VW + 'px'; canvas.style.height = VH + 'px';
@@ -5982,7 +5986,12 @@ function bindUI() {
   if (els.selContent) els.selContent.addEventListener('click', e => {
     const unitBtn = e.target.closest('[data-unit-action]');
     if (unitBtn) {
-      if (unitBtn.dataset.unitAction === 'deploy' && S.selected.length === 1) deployBaseVehicle(S.selected[0]);
+      const act = unitBtn.dataset.unitAction;
+      if (act === 'deploy' && S.selected.length === 1) deployBaseVehicle(S.selected[0]);
+      else if (act === 'militia') tryMilitia();
+      else if (act === 'detonate') detonateFanatics();
+      else if (act === 'stop') stopSelected();
+      updateSelectionPanel(true);
       return;
     }
     const btn = e.target.closest('[data-building-action]');
@@ -6018,6 +6027,10 @@ function bindUI() {
   $('#btn-story-skip')?.addEventListener('click', hideStoryBriefing);
   mini.addEventListener('pointerdown', minimapClick);
   canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('touchstart', e => { if (TOUCH_UI) { e.preventDefault(); onTouchStart(e); } }, { passive: false });
+  canvas.addEventListener('touchmove', e => { if (TOUCH_UI) { e.preventDefault(); onTouchMove(e); } }, { passive: false });
+  canvas.addEventListener('touchend', e => { if (TOUCH_UI) { e.preventDefault(); onTouchEnd(e); } }, { passive: false });
+  canvas.addEventListener('touchcancel', () => { touchPts.clear(); pinchStart = null; S.panning = null; clearTimeout(longPressTimer); });
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
@@ -6028,6 +6041,82 @@ function bindUI() {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', e => { S.keys[e.key.toLowerCase()] = false; });
   window.addEventListener('blur', () => { S.keys = {}; S.mouse.inside = false; });
+}
+const touchPts = new Map();
+let pinchStart = null, longPressTimer = null;
+function touchMid() {
+  const a = [...touchPts.values()];
+  if (!a.length) return { x: 0, y: 0, d: 0 };
+  const x = a.reduce((n, q) => n + q.x, 0) / a.length;
+  const y = a.reduce((n, q) => n + q.y, 0) / a.length;
+  const d = a.length > 1 ? Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) : 0;
+  return { x, y, d };
+}
+function onTouchStart(e) {
+  if (S.mode !== 'playing') return;
+  for (const t of e.changedTouches) touchPts.set(t.identifier, { x: t.clientX, y: t.clientY });
+  if (touchPts.size === 2) {
+    S.drag = null;
+    const m = touchMid();
+    pinchStart = { d: m.d, z: S.cam.z, cx: m.x, cy: m.y };
+    return;
+  }
+  if (touchPts.size > 2) return;
+  const t = e.changedTouches[0];
+  S.panning = { x: t.clientX, y: t.clientY, moved: false };
+  clearTimeout(longPressTimer);
+  longPressTimer = setTimeout(() => {
+    if (!S.panning || S.panning.moved) return;
+    const r = canvas.getBoundingClientRect();
+    attackMoveAt(t.clientX - r.left, t.clientY - r.top);
+    S.panning = null;
+  }, 550);
+}
+function onTouchMove(e) {
+  if (S.mode !== 'playing') return;
+  for (const t of e.changedTouches) if (touchPts.has(t.identifier)) touchPts.set(t.identifier, { x: t.clientX, y: t.clientY });
+  if (pinchStart && touchPts.size >= 2) {
+    const m = touchMid();
+    if (pinchStart.d > 4) {
+      const z = clamp(pinchStart.z * (m.d / pinchStart.d), .62, 1.55);
+      S.cam.x = m.x - (m.x - S.cam.x) * (z / S.cam.z);
+      S.cam.y = m.y - (m.y - S.cam.y) * (z / S.cam.z);
+      S.cam.z = z; clampCamera();
+    }
+    return;
+  }
+  if (S.panning && touchPts.size === 1) {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - S.panning.x, dy = t.clientY - S.panning.y;
+    if (Math.abs(dx) + Math.abs(dy) > 6) S.panning.moved = true;
+    S.cam.x += dx; S.cam.y += dy;
+    S.panning.x = t.clientX; S.panning.y = t.clientY;
+    clampCamera();
+  }
+}
+function onTouchEnd(e) {
+  const wasSingle = touchPts.size === 1;
+  for (const t of e.changedTouches) touchPts.delete(t.identifier);
+  clearTimeout(longPressTimer);
+  if (touchPts.size === 0) pinchStart = null;
+  if (!wasSingle || !S.panning || S.panning.moved) { S.panning = null; return; }
+  // tap
+  const t = e.changedTouches[0];
+  S.panning = null;
+  const r = canvas.getBoundingClientRect();
+  const sx = t.clientX - r.left, sy = t.clientY - r.top;
+  S.mouse.x = sx; S.mouse.y = sy;
+  const hit = pickAt(sx, sy);
+  if (S.placing) { placeBuilding(); return; }
+  if (S.superAim) { castSuperAt(t.clientX, t.clientY); return; }
+  if (S.miniAim) { const w = screenToWorld(sx, sy); applyMiniAt(w.x, w.y); return; }
+  const spies = S.selected.filter(u => u.type === 'spy' && u.hp > 0 && !u.garrisoned);
+  if (spies.length && hit && hit.type === 'building' && hit.ref.team === ENEMY) { attemptInfiltrate(spies[0], hit.ref); return; }
+  if (hit && hit.type === 'unit' && hit.ref.team === PLAYER) { selectAt(sx, sy, false); return; }
+  if (hit && hit.type === 'building' && hit.ref.team === PLAYER) { selectAt(sx, sy, false); return; }
+  if (hit && (hit.type === 'gold' || (hit.ref && hit.ref.team !== PLAYER))) { commandAt(sx, sy); return; }
+  if (S.selected.length) { commandAt(sx, sy); return; }
+  clearSelection();
 }
 function onPointerDown(e) {
   if (S.mode !== 'playing' || S.paused) return;
@@ -6067,6 +6156,7 @@ function onPointerDown(e) {
   S.drag = { sx: e.clientX, sy: e.clientY, active: false, add: e.shiftKey };
 }
 function onPointerMove(e) {
+  if (TOUCH_UI && e.pointerType === 'touch') return;
   const r = canvas.getBoundingClientRect();
   S.mouse.x = e.clientX - r.left; S.mouse.y = e.clientY - r.top; S.mouse.inside = true;
   const w = screenToWorld(S.mouse.x, S.mouse.y);
@@ -6538,6 +6628,9 @@ if (params.get('debug') === '1') {
       explodeTest: window.__before === undefined ? null : { before: window.__before, after: window.__after, hp: window.__hp, keep: [window.__bhp0, window.__bhp1] },
       spyTest: window.__spyGold0 === undefined ? null : { gold: [window.__spyGold0, window.__spyGold1], chest: [window.__spyChest0, window.__spyChest1], alive: window.__spyAlive },
       spies: S.units.filter(u => u.type === 'spy').length,
+      touch: window.__touch || null,
+      touchUI: TOUCH_UI,
+      bodyClass: document.body.className,
       fanatics: S.units.filter(u => u.type === 'fanatic').map(u => ({ team: u.team, hp: Math.round(u.hp), fuse: Math.round((u.fuseT || 0) * 100) / 100 })),
       faithEff: { def: Math.round(FAITH_RATE.defense(faithRatio()) * 1000) / 1000, train: Math.round(FAITH_RATE.train(faithRatio()) * 1000) / 1000, sup: Math.round(FAITH_RATE.super(faithRatio()) * 1000) / 1000 },
       ctest: window.__ctest || null,
@@ -6909,6 +7002,51 @@ if (fanaticTest && S.mode === 'playing') {
     if (fanaticTest === 'fuse') { f.fuseT = .5; f.hp = 0; kill(f); }
     if (fanaticTest === 'manual') { S.selected = [f]; detonateFanatics(); }
   }
+  if (window.__dbgUpdate) window.__dbgUpdate();
+}
+const touchTest = params.get('touchtest');
+if (touchTest === '1' && S.mode === 'playing') {
+  const r = canvas.getBoundingClientRect();
+  const mk = (id, x, y) => ({ identifier: id, clientX: r.left + x, clientY: r.top + y, pageX: x, pageY: y });
+  const ev = (type, touches) => {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    e.changedTouches = touches; e.touches = touches;
+    e.preventDefault = () => {};
+    return e;
+  };
+  const out = {};
+  // tap own unit
+  const u = S.units.find(x => x.team === PLAYER);
+  if (u) {
+    const sp = worldToScreen(u.x, u.y);
+    canvas.dispatchEvent(ev('touchstart', [mk(1, sp.x, sp.y)]));
+    canvas.dispatchEvent(ev('touchend', [mk(1, sp.x, sp.y)]));
+    out.tapSelect = S.selected.length;
+    // tap ground far away -> move order
+    canvas.dispatchEvent(ev('touchstart', [mk(2, 120, 200)]));
+    canvas.dispatchEvent(ev('touchend', [mk(2, 120, 200)]));
+    out.hasOrder = !!(u.order || u.target);
+  }
+  // pinch
+  const z0 = S.cam.z;
+  canvas.dispatchEvent(ev('touchstart', [mk(3, 300, 300), mk(4, 400, 300)]));
+  canvas.dispatchEvent(ev('touchmove', [mk(3, 260, 300), mk(4, 440, 300)]));
+  canvas.dispatchEvent(ev('touchend', [mk(3, 260, 300), mk(4, 440, 300)]));
+  out.zoom = Math.round((S.cam.z - z0) * 1000) / 1000;
+  const cs = el => el ? getComputedStyle(el) : null;
+  const sb = cs(document.getElementById('sidebar'));
+  const card = document.querySelector('.cmd-card');
+  const hb = cs(document.getElementById('hintbar'));
+  const rh = cs(document.getElementById('rotate-hint'));
+  out.css = {
+    sidebarTop: sb ? sb.top : null,
+    sidebarBottom: sb ? sb.bottom : null,
+    cardMinH: card ? Math.round(card.getBoundingClientRect().height) : 0,
+    hintbar: hb ? hb.display : null,
+    rotateHint: rh ? rh.display : null,
+    vw: innerWidth, vh: innerHeight
+  };
+  window.__touch = out;
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
 const researchSpec = params.get('research');
