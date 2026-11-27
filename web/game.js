@@ -1298,7 +1298,7 @@ function resetWorld() {
   S.buildQ = { cur: null, queue: [] };
   S.faith = { prod: 0, cost: 0, ratio: 1, gap: 0 }; S.faithT = 0;
   S.enemyChest = 600;
-  S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.enemySuper = null; S.radar = false;
+  S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.aiPrimary = null; S.radar = false;
   S.stats = { kills: 0, losses: 0, gathered: 0 };
   const L = currentLevel();
   S.faction = (S.run === 'skirmish' && S.skirmish && FACTIONS[S.skirmish.faction]) ? S.skirmish.faction : 'rose';
@@ -1337,8 +1337,9 @@ function resetWorld() {
   }
   S.enemyMods = { ...L.mods };
   S.wave = { n: 0, timer: Math.max(30, DIFFS[S.diffKey].first + L.firstAdd) };
-  S.enemy = { nextTrain: 12, tacticTimer: 0, baseVehicleTimer: 18, attackTimer: 40, buildRetry: 0 };
-  S.enemySuper = (S.run === 'skirmish' && S.supersEnabled) ? {
+  // One AIPlayer instance per enemy commander; the 1v1 opponent is the primary one.
+  S.aiPrimary = new AIPlayer({ slot: 1, team: ENEMY });
+  S.aiPrimary.super = (S.run === 'skirmish' && S.supersEnabled) ? {
     key: ['fire', 'storm', 'plague'][Math.floor(Math.random() * 3)],
     timer: 90, built: false
   } : null;
@@ -3135,89 +3136,272 @@ function launchWave() {
   S.wave.timer = Math.max(26, diff.every + (L.everyAdd || 0) - S.wave.n * 1.5);
 }
 /* ===== 7. AI ===== */
-function updateAI(dt) {
-  if (S.tutorial) return;
-  const diff = DIFFS[S.diffKey];
-  const L = currentLevel();
-  S.enemy.buildRetry -= dt;
-  if (S.enemy.buildRetry <= 0) {
-    S.enemy.buildRetry = 5;
-    tryBuildEnemyFountain();
-    tryBuildEnemyBarracks();
-    tryBuildEnemyWorkshop();
+/* One AIPlayer instance drives one AI commander. Everything that used to live on
+   S.enemy (timers, super-weapon state) belongs to the instance now, so S.teams can
+   host several commanders without them sharing globals. */
+class AIPlayer {
+  constructor(opts = {}) {
+    this.slot = (opts.slot === undefined) ? -1 : opts.slot;
+    this.team = opts.team || ENEMY;      // unit team this commander controls
+    this.ai2 = !!opts.ai2;               // second legion: owns only the units tagged ai2
+    this.enabled = opts.enabled !== false;
+    this.super = null;
+    this.reset();
   }
-  S.enemy.nextTrain -= dt;
-  if (S.enemy.nextTrain <= 0) {
-    S.enemy.nextTrain = diff.train * (L.trainMul || 1) * rnd(.85, 1.2) * AI_PACE.trainMul;
-    if (enemyUnits().length < diff.max + (L.extra || 0)) {
-      const base = S.buildings.find(b => b.team === ENEMY && b.type === 'barracks');
-      if (base) {
-        const type = pickEnemyType(Math.random());
-        const p = spawnPointFor(base);
-        const u = addUnit(type, ENEMY, p.x + rnd(-.8, .8), p.y);
-        u.order = { type: 'move', x: base.x + rnd(-2, 2), y: base.y + rnd(1.5, 3) };
+  reset() {
+    this.nextTrain = 12;
+    this.tacticTimer = 0;
+    this.baseVehicleTimer = 18;
+    this.attackTimer = 40;
+    this.buildRetry = 0;
+  }
+  /* ---- board queries ---------------------------------------------------- */
+  allTeamUnits() { return S.units.filter(u => u.team === this.team); }
+  units() {
+    return S.units.filter(u => u.team === this.team && (this.ai2 ? !!u.ai2 : !u.ai2));
+  }
+  structures(type) {
+    return S.buildings.find(b => b.team === this.team && b.type === type && b.hp > 0 && !b.dead);
+  }
+  /* ---- tick ------------------------------------------------------------- */
+  update(dt) {
+    if (S.tutorial || !this.enabled) return;
+    const diff = DIFFS[S.diffKey];
+    const L = currentLevel();
+    this.buildRetry -= dt;
+    if (this.buildRetry <= 0) {
+      this.buildRetry = 5;
+      this.tryBuildFountain();
+      this.tryBuildBarracks();
+      this.tryBuildWorkshop();
+    }
+    this.nextTrain -= dt;
+    if (this.nextTrain <= 0) {
+      this.nextTrain = diff.train * (L.trainMul || 1) * rnd(.85, 1.2) * AI_PACE.trainMul;
+      if (this.allTeamUnits().length < diff.max + (L.extra || 0)) {
+        const base = this.structures('barracks');
+        if (base) {
+          const type = pickEnemyType(Math.random());
+          const p = spawnPointFor(base);
+          const u = addUnit(type, this.team, p.x + rnd(-.8, .8), p.y);
+          if (this.ai2) u.ai2 = true;
+          u.order = { type: 'move', x: base.x + rnd(-2, 2), y: base.y + rnd(1.5, 3) };
+        }
+      }
+    }
+    this.tacticTimer -= dt;
+    if (this.tacticTimer <= 0) {
+      this.tacticTimer = Math.max(.8, 1.5 - S.campaignLevel * .1);
+      this.updateTactics();
+    }
+    if (this.baseVehicleTimer > 0) {
+      this.baseVehicleTimer -= dt;
+      if (this.baseVehicleTimer <= 0) {
+        const bv = this.units().find(u => u.type === 'baseVehicle' && u.hp > 0 && !u.garrisoned);
+        if (bv && !this.deployBaseVehicle(bv)) this.baseVehicleTimer = 8;
+      }
+    }
+    this.attackTimer -= dt;
+    if (this.attackTimer <= 0) this.assault();
+    this.updateSuper(dt);
+  }
+  /* ---- offence ---------------------------------------------------------- */
+  assault() {
+    if (S.tutorial) return;
+    const diff = DIFFS[S.diffKey];
+    const target = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0)
+      || S.units.find(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned);
+    if (!target) { this.attackTimer = 8; return; }
+    const army = this.units().filter(u => u.hp > 0 && !u.garrisoned && u.type !== 'baseVehicle');
+    const need = Math.max(3, Math.min(9, 3 + S.campaignLevel));
+    if (army.length < need) { this.attackTimer = 6; return; }
+    for (const u of army) {
+      u.order = { type: 'attackMove', x: target.x + rnd(-2.2, 2.2), y: target.y + rnd(-2.2, 2.2) };
+      u.target = null;
+    }
+    this.attackTimer = Math.max(14, diff.every * .55) + rnd(0, 7);
+    Sound.play('hornlow');
+  }
+  /* ---- super weapon ----------------------------------------------------- */
+  updateSuper(dt) {
+    if (S.tutorial) return;
+    if (!S.supersEnabled) return;
+    if (!this.super) return;
+    const sup = SUPERS[this.super.key];
+    if (!sup) return;
+    const building = this.structures(sup.building);
+    if (building) this.super.built = true;
+    if (!this.super.built) {
+      this.super.retry = (this.super.retry || 0) - dt;
+      if (this.super.retry <= 0) {
+        this.super.retry = 5;
+        this.tryBuildSuperBuilding();
+      }
+      return;
+    }
+    if (!building) {
+      // 超武建筑被拆掉后，黑鸦必须重新建造才能再次使用。
+      this.super.built = false;
+      this.super.timer = 90;
+      this.super.retry = 8;
+      return;
+    }
+    this.super.timer -= dt;
+    if (this.super.timer <= 0) this.castSuper();
+  }
+  castSuper() {
+    const sup = SUPERS[this.super && this.super.key];
+    if (!sup) return;
+    const target = enemySuperTarget();
+    if (!target) { this.super.timer = 15; return; }
+    const hits = applySuperAt(this.super.key, target.x, target.y, this.team);
+    toast(`${enemyFactionName()}发动「${sup.name}」！${hits ? `命中 ${hits} 个目标` : '落点偏移'}`, 'warn', sup.icon);
+    floatText(target.x, target.y - 1, `${enemyFactionName()} · ${sup.name}`, '#ff9b8a');
+    Sound.play('hornlow'); Sound.play('boom');
+    this.super.timer = sup.cd + 25;
+  }
+  /* ---- construction (per-type loops kept identical to the 1v1 baseline) -- */
+  tryBuildBarracks() {
+    if (S.time < AI_PACE.barracksAt) return false;
+    if (this.structures('barracks')) return true;
+    const keep = this.structures('keep');
+    if (!keep) return false;
+    for (let r = 3; r <= 10; r++) {
+      for (let a = 0; a < 16; a++) {
+        const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 2);
+        const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 2);
+        if (!canPlace('barracks', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+        nudgeUnitsOut(tx, ty, 2, 2);
+        const b = addBuilding('barracks', tx, ty, this.team);
+        b.constructed = true; b.progress = 1;
+        if (this.ai2) b.ai2 = true;
+        burst(b.x, b.y, 'dust', 14);
+        return true;
+      }
+    }
+    return false;
+  }
+  tryBuildFountain() {
+    if (this.structures('fountain')) return false;
+    if (faithOf(this.team).gap <= 5) return false;
+    const keep = this.structures('keep');
+    if (!keep) return false;
+    for (let r = 3; r <= 10; r++) {
+      for (let a = 0; a < 16; a++) {
+        const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 3);
+        const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 3);
+        if (!canPlace('fountain', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+        const b = addBuilding('fountain', tx, ty, this.team);
+        b.constructed = true; b.progress = 1;
+        if (this.ai2) b.ai2 = true;
+        burst(b.x, b.y, 'dust', 14);
+        return true;
+      }
+    }
+    return false;
+  }
+  tryBuildWorkshop() {
+    if (S.time < AI_PACE.workshopAt) return false;
+    if (this.structures('workshop')) return true;
+    const keep = this.structures('keep');
+    if (!keep) return false;
+    for (let r = 3; r <= 10; r++) {
+      for (let a = 0; a < 16; a++) {
+        const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 2), 0, MAP - 3);
+        const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 2), 0, MAP - 3);
+        if (!canPlace('workshop', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+        nudgeUnitsOut(tx, ty, 3, 3);
+        const b = addBuilding('workshop', tx, ty, this.team);
+        b.constructed = true; b.progress = 1;
+        b.builtAt = S.time;
+        if (this.ai2) b.ai2 = true;
+        burst(b.x, b.y, 'dust', 18);
+        return true;
+      }
+    }
+    return false;
+  }
+  tryBuildSuperBuilding() {
+    if (S.run !== 'skirmish') return false;
+    const ws = this.structures('workshop');
+    if (!ws) return false;
+    if (S.time < (ws.builtAt || 0) + AI_PACE.superDelay) return false;
+    if (!S.supersEnabled) return false;
+    if (!this.super || this.super.built) return false;
+    const sup = SUPERS[this.super.key];
+    if (!sup) return false;
+    const type = sup.building;
+    if (this.structures(type)) { this.super.built = true; return true; }
+    const anchor = S.buildings.find(b => b.team === this.team && b.type === 'keep' && b.hp > 0);
+    if (!anchor) return false;
+    for (let r = 3; r <= 10; r++) {
+      for (let a = 0; a < 16; a++) {
+        const tx = clamp(Math.round(anchor.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 2);
+        const ty = clamp(Math.round(anchor.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 2);
+        if (!canPlace(type, tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+        nudgeUnitsOut(tx, ty, B[type].w, B[type].d);
+        const b = addBuilding(type, tx, ty, this.team);
+        b.constructed = true; b.progress = 1;
+        if (this.ai2) b.ai2 = true;
+        burst(b.x, b.y, 'dust', 14);
+        this.super.built = true;
+        this.super.timer = 45;
+        return true;
+      }
+    }
+    return false;
+  }
+  deployBaseVehicle(u) {
+    if (!u || u.team !== this.team || u.type !== 'baseVehicle' || u.hp <= 0) return false;
+    const keep = this.structures('keep');
+    // 开局没有主堡时，基地车就是临时基地，直接原地找空地展开。
+    const anchor = keep || u;
+    if (keep && S.units.some(p => p.team === PLAYER && p.hp > 0 && !p.garrisoned
+      && Math.hypot(p.x - keep.x, p.y - keep.y) < 12)) return false;
+    for (let r = 3; r <= 11; r++) {
+      for (let a = 0; a < 16; a++) {
+        const tx = clamp(Math.round(anchor.x + Math.cos(a * Math.PI / 8) * r - 1.5), 0, MAP - 3);
+        const ty = clamp(Math.round(anchor.y + Math.sin(a * Math.PI / 8) * r - 1.5), 0, MAP - 3);
+        if (!canPlace('keep', tx, ty, { ignoreBuildRadius: true })) continue;
+        S.units = S.units.filter(x => x !== u);
+        const b = addBuilding('keep', tx, ty, this.team);
+        b.constructed = true; b.progress = 1;
+        if (this.ai2) b.ai2 = true;
+        burst(b.x, b.y, 'dust', 20);
+        this.tryBuildBarracks();
+        this.tryBuildSuperBuilding();
+        return true;
+      }
+    }
+    return false;
+  }
+  /* ---- unit-level tactics ----------------------------------------------- */
+  updateTactics() {
+    const keep = this.structures('keep');
+    if (!keep) return;
+    const threats = S.units.filter(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned
+      && Math.hypot(u.x - keep.x, u.y - keep.y) < 13);
+    for (const u of this.units()) {
+      if (u.hp <= 0 || u.garrisoned || u.type === 'baseVehicle') continue;
+      const dKeep = Math.hypot(u.x - keep.x, u.y - keep.y);
+      // 残血部队回主堡和箭塔下，而不是继续送死。
+      if (u.hp < u.maxHp * .32 && dKeep > 5) {
+        u.order = { type: 'move', x: keep.x, y: keep.y + 2 };
+        u.target = null;
+        continue;
+      }
+      // 主堡被围攻时，附近部队优先回防，并集火最脆弱/最有价值的目标。
+      if (threats.length && dKeep < 15) {
+        const threat = findSmartTarget(u, 12);
+        if (threat) { orderAttack(u, threat); continue; }
+      }
+      // 空闲部队不再只集火最近目标，而是优先农民、攻城车和远程单位。
+      if (!u.target && !u.order) {
+        const target = findSmartTarget(u, 9);
+        if (target) orderAttack(u, target);
       }
     }
   }
-  S.enemy.tacticTimer -= dt;
-  if (S.enemy.tacticTimer <= 0) {
-    S.enemy.tacticTimer = Math.max(.8, 1.5 - S.campaignLevel * .1);
-    updateEnemyTactics();
-  }
-  if (S.enemy.baseVehicleTimer > 0) {
-    S.enemy.baseVehicleTimer -= dt;
-    if (S.enemy.baseVehicleTimer <= 0) {
-      const bv = S.units.find(u => u.team === ENEMY && u.type === 'baseVehicle' && u.hp > 0 && !u.garrisoned && !u.ai2);
-      if (bv && !deployEnemyBaseVehicle(bv)) S.enemy.baseVehicleTimer = 8;
-    }
-  }
-  S.enemy.attackTimer -= dt;
-  if (S.enemy.attackTimer <= 0) enemyAssault();
-  updateEnemySuper(dt);
-  updateSecondAI(dt);
-}
-function enemyAssault() {
-  if (S.tutorial) return;
-  const diff = DIFFS[S.diffKey];
-  const target = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0)
-    || S.units.find(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned);
-  if (!target) { S.enemy.attackTimer = 8; return; }
-  const army = S.units.filter(u => u.team === ENEMY && u.hp > 0 && !u.garrisoned
-    && u.type !== 'baseVehicle' && !u.ai2);
-  const need = Math.max(3, Math.min(9, 3 + S.campaignLevel));
-  if (army.length < need) { S.enemy.attackTimer = 6; return; }
-  for (const u of army) {
-    u.order = { type: 'attackMove', x: target.x + rnd(-2.2, 2.2), y: target.y + rnd(-2.2, 2.2) };
-    u.target = null;
-  }
-  S.enemy.attackTimer = Math.max(14, diff.every * .55) + rnd(0, 7);
-  Sound.play('hornlow');
-}
-function updateEnemySuper(dt) {
-  if (S.tutorial) return;
-  if (!S.supersEnabled) return;
-  if (!S.enemySuper) return;
-  const sup = SUPERS[S.enemySuper.key];
-  if (!sup) return;
-  const building = S.buildings.find(b => b.team === ENEMY && b.type === sup.building && b.hp > 0 && !b.dead);
-  if (building) S.enemySuper.built = true;
-  if (!S.enemySuper.built) {
-    S.enemySuper.retry = (S.enemySuper.retry || 0) - dt;
-    if (S.enemySuper.retry <= 0) {
-      S.enemySuper.retry = 5;
-      tryBuildEnemySuperBuilding();
-    }
-    return;
-  }
-  if (!building) {
-    // 超武建筑被拆掉后，黑鸦必须重新建造才能再次使用。
-    S.enemySuper.built = false;
-    S.enemySuper.timer = 90;
-    S.enemySuper.retry = 8;
-    return;
-  }
-  S.enemySuper.timer -= dt;
-  if (S.enemySuper.timer <= 0) castEnemySuper();
 }
 function nudgeUnitsOut(tx, ty, w, d) {
   for (const u of S.units) {
@@ -3226,106 +3410,6 @@ function nudgeUnitsOut(tx, ty, w, d) {
     const free = nearestFreeSpot(u.x, u.y, 4);
     if (free) { u.x = free.x; u.y = free.y; u.path = null; u.pathGoal = null; }
   }
-}
-function tryBuildEnemyBarracks() {
-  if (S.time < AI_PACE.barracksAt) return false;
-  if (S.buildings.some(b => b.team === ENEMY && b.type === 'barracks' && b.hp > 0 && !b.dead)) return true;
-  const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0 && !b.dead);
-  if (!keep) return false;
-  for (let r = 3; r <= 10; r++) {
-    for (let a = 0; a < 16; a++) {
-      const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 2);
-      const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 2);
-      if (!canPlace('barracks', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
-      nudgeUnitsOut(tx, ty, 2, 2);
-      const b = addBuilding('barracks', tx, ty, ENEMY);
-      b.constructed = true; b.progress = 1;
-      burst(b.x, b.y, 'dust', 14);
-      return true;
-    }
-  }
-  return false;
-}
-function tryBuildEnemyFountain() {
-  if (S.buildings.some(b => b.team === ENEMY && b.type === 'fountain' && b.hp > 0 && !b.dead)) return false;
-  if (faithOf(ENEMY).gap <= 5) return false;
-  const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0 && !b.dead);
-  if (!keep) return false;
-  for (let r = 3; r <= 10; r++) {
-    for (let a = 0; a < 16; a++) {
-      const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 3);
-      const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 3);
-      if (!canPlace('fountain', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
-      const b = addBuilding('fountain', tx, ty, ENEMY);
-      b.constructed = true; b.progress = 1;
-      burst(b.x, b.y, 'dust', 14);
-      return true;
-    }
-  }
-  return false;
-}
-function tryBuildEnemyWorkshop() {
-  if (S.time < AI_PACE.workshopAt) return false;
-  if (S.buildings.some(b => b.team === ENEMY && b.type === 'workshop' && b.hp > 0 && !b.dead)) return true;
-  const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0 && !b.dead);
-  if (!keep) return false;
-  for (let r = 3; r <= 10; r++) {
-    for (let a = 0; a < 16; a++) {
-      const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 2), 0, MAP - 3);
-      const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 2), 0, MAP - 3);
-      if (!canPlace('workshop', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
-      nudgeUnitsOut(tx, ty, 3, 3);
-      const b = addBuilding('workshop', tx, ty, ENEMY);
-      b.constructed = true; b.progress = 1;
-      b.builtAt = S.time;
-      burst(b.x, b.y, 'dust', 18);
-      return true;
-    }
-  }
-  return false;
-}
-function tryBuildEnemySuperBuilding() {
-  if (S.run !== 'skirmish') return false;
-  const ws = S.buildings.find(b => b.team === ENEMY && b.type === 'workshop' && b.hp > 0 && !b.dead);
-  if (!ws) return false;
-  if (S.time < (ws.builtAt || 0) + AI_PACE.superDelay) return false;
-  if (!S.supersEnabled) return false;
-  if (!S.enemySuper || S.enemySuper.built) return false;
-  const sup = SUPERS[S.enemySuper.key];
-  if (!sup) return false;
-  const type = sup.building;
-  if (S.buildings.some(b => b.team === ENEMY && b.type === type && b.hp > 0 && !b.dead)) {
-    S.enemySuper.built = true;
-    return true;
-  }
-  const anchor = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0);
-  if (!anchor) return false;
-  for (let r = 3; r <= 10; r++) {
-    for (let a = 0; a < 16; a++) {
-      const tx = clamp(Math.round(anchor.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 2);
-      const ty = clamp(Math.round(anchor.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 2);
-      if (!canPlace(type, tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
-      nudgeUnitsOut(tx, ty, B[type].w, B[type].d);
-      const b = addBuilding(type, tx, ty, ENEMY);
-      b.constructed = true; b.progress = 1;
-      burst(b.x, b.y, 'dust', 14);
-      S.enemySuper.built = true;
-      S.enemySuper.timer = 45;
-      return true;
-    }
-  }
-  return false;
-}
-function castEnemySuper() {
-  const sup = SUPERS[S.enemySuper?.key];
-  if (!sup) return;
-  const target = enemySuperTarget();
-  if (!target) { S.enemySuper.timer = 15; return; }
-  const hits = applySuperAt(S.enemySuper.key, target.x, target.y, ENEMY);
-  toast(`${enemyFactionName()}发动「${sup.name}」！${hits ? `命中 ${hits} 个目标` : '落点偏移'}`, 'warn', sup.icon);
-  floatText(target.x, target.y - 1, `${enemyFactionName()} · ${sup.name}`, '#ff9b8a');
-  Sound.play('hornlow'); Sound.play('boom');
-  S.enemySuper.timer = sup.cd + 25;
 }
 function enemySuperTarget() {
   const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0 && !b.dead);
@@ -3339,32 +3423,12 @@ function enemySuperTarget() {
   }
   return S.units.find(u => u.team === PLAYER && u.hp > 0) || null;
 }
-function updateEnemyTactics() {
-  const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0);
-  if (!keep) return;
-  const threats = S.units.filter(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned
-    && Math.hypot(u.x - keep.x, u.y - keep.y) < 13);
-  for (const u of S.units) {
-    if (u.team !== ENEMY || u.hp <= 0 || u.garrisoned || u.type === 'baseVehicle' || u.ai2) continue;
-    const dKeep = Math.hypot(u.x - keep.x, u.y - keep.y);
-    // 残血部队回主堡和箭塔下，而不是继续送死。
-    if (u.hp < u.maxHp * .32 && dKeep > 5) {
-      u.order = { type: 'move', x: keep.x, y: keep.y + 2 };
-      u.target = null;
-      continue;
-    }
-    // 主堡被围攻时，附近部队优先回防，并集火最脆弱/最有价值的目标。
-    if (threats.length && dKeep < 15) {
-      const threat = findSmartTarget(u, 12);
-      if (threat) { orderAttack(u, threat); continue; }
-    }
-    // 空闲部队不再只打最近的敌人，而是优先集火农民、攻城车和远程单位。
-    if (!u.target && !u.order) {
-      const target = findSmartTarget(u, 9);
-      if (target) orderAttack(u, target);
-    }
-  }
+function updateAI(dt) {
+  if (S.tutorial) return;
+  if (S.aiPrimary) S.aiPrimary.update(dt);
+  updateSecondAI(dt);
 }
+
 function allyBase() {
   return S.buildings.find(b => b.team === ALLY && b.type === 'keep')
     || S.buildings.find(b => b.team === ALLY && b.type === 'barracks');
@@ -3426,29 +3490,6 @@ function updateSecondAI(dt) {
   S.secondAI.attackTimer = 24;
   toast(enemyFactionName() + '第二军团发起进攻', 'warn', 'shield');
   Sound.play('hornlow');
-}
-function deployEnemyBaseVehicle(u) {
-  if (!u || u.team !== ENEMY || u.type !== 'baseVehicle' || u.hp <= 0) return false;
-  const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0);
-  // 开局没有主堡时，基地车就是黑鸦的临时基地，直接原地找空地展开。
-  const anchor = keep || u;
-  if (keep && S.units.some(p => p.team === PLAYER && p.hp > 0 && !p.garrisoned
-    && Math.hypot(p.x - keep.x, p.y - keep.y) < 12)) return false;
-  for (let r = 3; r <= 11; r++) {
-    for (let a = 0; a < 16; a++) {
-      const tx = clamp(Math.round(anchor.x + Math.cos(a * Math.PI / 8) * r - 1.5), 0, MAP - 3);
-      const ty = clamp(Math.round(anchor.y + Math.sin(a * Math.PI / 8) * r - 1.5), 0, MAP - 3);
-      if (!canPlace('keep', tx, ty, { ignoreBuildRadius: true })) continue;
-      S.units = S.units.filter(x => x !== u);
-      const b = addBuilding('keep', tx, ty, ENEMY);
-      b.constructed = true; b.progress = 1;
-      burst(b.x, b.y, 'dust', 20);
-      tryBuildEnemyBarracks();
-      tryBuildEnemySuperBuilding();
-      return true;
-    }
-  }
-  return false;
 }
 function updateAllyAI(dt) {
   if (S.tutorial) return;
@@ -6695,7 +6736,7 @@ if (params.get('debug') === '1') {
       perfSep: S.perf ? S.perf.sep : 0,
       keyLog: window.__keyLog || [],
       buildQ: (S.buildQ.cur ? S.buildQ.cur.type + ':' + (S.buildQ.cur.ready ? 'ready' : Math.round(100 * S.buildQ.cur.elapsed / S.buildQ.cur.total)) : '-') + '/' + S.buildQ.queue.length,
-      enemySuper: !!S.enemySuper,
+      enemySuper: !!(S.aiPrimary && S.aiPrimary.super),
       superHud: (() => {
         const h = document.getElementById('super-hud');
         if (!h) return 'none';
