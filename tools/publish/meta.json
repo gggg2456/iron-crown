@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v1.7.0：手机网页版（触屏操作 + 底部指令栏 + 局域网访问）",
+  "commitMessage": "修复 P0：手机版触屏点选/下令失效（pointerup 抢先清空 panning，touchend 直接 return）",
   "releaseName": "铁与王冠 v1.7.0 · Iron & Crown",
   "releaseBody": "## 铁与王冠 v1.7.0 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB（解压约 358 MB）\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.7.0 改动：手机网页版\n\n- **触屏操作**：轻点选择/下令，单指拖动平移，双指捏合缩放，长按 0.55 秒攻击移动\n- **底部指令栏**：窄屏把右侧栏改成底部横条，卡片高度 ≥44px；顶栏压缩、隐藏键盘提示、适配刘海安全区\n- **触屏按钮**：征召民兵（原 V）、原地引爆（原 D）、停止（原 E）都能点了\n- **手机端 DPR 上限 1.5**，稳帧省电\n- **局域网访问**：本地测试服务器改为绑定 `0.0.0.0`，启动时打印手机地址（如 `http://10.203.2.223:8765/story.html`），同一 Wi-Fi 下手机浏览器直接玩\n\n> 这个 zip 仍是 Windows 专用；手机上请用上面的局域网地址在浏览器里玩。\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }

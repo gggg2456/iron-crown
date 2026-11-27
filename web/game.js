@@ -6119,6 +6119,10 @@ function onTouchEnd(e) {
   clearSelection();
 }
 function onPointerDown(e) {
+  // Touch is handled end-to-end by onTouchStart/onTouchMove/onTouchEnd. Chromium fires
+  // pointerup *before* touchend, so letting the pointer handlers touch S.panning here
+  // would clear it and make onTouchEnd skip every tap (no select, no command).
+  if (e.pointerType === 'touch') return;
   if (S.mode !== 'playing' || S.paused) return;
   if (e.button === 1) {
     e.preventDefault();
@@ -6221,6 +6225,7 @@ function onPointerMove(e) {
   }
 }
 function onPointerUp(e) {
+  if (e.pointerType === 'touch') return;   // onTouchEnd finishes touch taps; keep S.panning for it
   if (S.superAim || S.miniAim || S.forceAim) { S.drag = null; return; }
   if (S.panning) { S.panning = null; canvas.style.cursor = 'default'; return; }
   if (!S.drag) return;
