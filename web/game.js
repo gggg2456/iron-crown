@@ -50,6 +50,126 @@ function validateSlots(slots) {
   for (const x of filled) if (!(x.team >= 1 && x.team <= 4)) errors.push('队伍编号必须在 1-4');
   return errors;
 }
+const SLOT_PRESETS = {
+  '1v1': [
+    { owner: 'player', faction: 'rose', team: 1 },
+    { owner: 'ai', faction: 'raven', team: 2 },
+    { owner: 'empty', faction: 'raven', team: null },
+    { owner: 'empty', faction: 'raven', team: null }
+  ],
+  '1v2': [
+    { owner: 'player', faction: 'rose', team: 1 },
+    { owner: 'ai', faction: 'raven', team: 2 },
+    { owner: 'ai', faction: 'raven', team: 2 },
+    { owner: 'empty', faction: 'raven', team: null }
+  ],
+  '2v2': [
+    { owner: 'player', faction: 'rose', team: 1 },
+    { owner: 'ai', faction: 'raven', team: 2 },
+    { owner: 'ai', faction: 'raven', team: 2 },
+    { owner: 'ai', faction: 'pine', team: 1 }
+  ]
+};
+function playerTeamOf(slots) {
+  const p = (slots || []).find(x => x && x.owner === 'player');
+  return p && p.team != null ? p.team : 1;
+}
+/* Every rule that must hold before a match may start. Empty slots are forced to
+   team: null here so no downstream code ever sees a phantom team id. */
+function rosterIssues(slots) {
+  const list = (slots || []).slice(0, 4);
+  for (const x of list) if (x.owner === 'empty') x.team = null;
+  const errors = [];
+  const filled = list.filter(x => x.owner !== 'empty');
+  if (!filled.some(x => x.owner === 'player')) errors.push('至少需要 1 个玩家槽位');
+  const teams = new Set(filled.map(x => x.team));
+  if (teams.size < 2) errors.push('至少需要 2 个不同队伍编号');
+  for (const x of filled) if (!(x.team >= 1 && x.team <= 4)) errors.push('队伍编号必须在 1-4');
+  const pt = playerTeamOf(list);
+  const hostile = filled.filter(x => x.owner === 'ai' && x.team !== pt).length;
+  const allies = filled.filter(x => x.owner === 'ai' && x.team === pt).length;
+  if (hostile > 2) errors.push('敌对电脑最多 2 个');
+  if (allies > 1) errors.push('己方电脑盟友最多 1 个');
+  return errors;
+}
+function activePreset() {
+  for (const name of Object.keys(SLOT_PRESETS)) {
+    const want = SLOT_PRESETS[name];
+    if (want.every((w, i) => {
+      const a = S.slots[i];
+      return a && a.owner === w.owner && a.faction === w.faction
+        && (w.team === null ? a.team === null : a.team === w.team);
+    })) return name;
+  }
+  return null;
+}
+function applyPreset(name) {
+  const preset = SLOT_PRESETS[name];
+  if (!preset) return;
+  S.slots = preset.map(x => ({ ...x }));
+  renderSlotTable();
+  Sound.play('ui');
+}
+function renderSlotTable() {
+  const host = document.getElementById('slot-table');
+  if (!host) return;
+  if (!S.slots || S.slots.length !== 4) S.slots = defaultSlots(S.faction);
+  const pt = playerTeamOf(S.slots);
+  host.innerHTML = '<div class="slot-row head"><span class="slot-no">槽位</span><span>控制方</span><span>阵营</span><span>队伍</span></div>';
+  S.slots.forEach((slot, i) => {
+    const row = document.createElement('div');
+    const feel = slot.owner === 'empty' ? 'is-empty' : slot.owner === 'player' ? 'is-player'
+      : (slot.team === pt ? 'is-ally' : 'is-enemy');
+    row.className = 'slot-row ' + feel;
+    const no = document.createElement('span');
+    no.className = 'slot-no';
+    no.textContent = String(i + 1);
+    row.appendChild(no);
+    const picker = (entries, value, onPick, disabled) => {
+      const sel = document.createElement('select');
+      for (const [v, label] of entries) {
+        const o = document.createElement('option');
+        o.value = String(v);
+        o.textContent = label;
+        if (String(v) === String(value)) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.disabled = !!disabled;
+      sel.addEventListener('change', () => onPick(sel.value));
+      return sel;
+    };
+    row.appendChild(picker([['player', '玩家'], ['ai', '电脑'], ['empty', '空']], slot.owner, v => {
+      slot.owner = v;
+      if (v === 'empty') slot.team = null;
+      else if (slot.team == null) slot.team = v === 'player' ? 1 : (pt === 1 ? 2 : 1);
+      renderSlotTable();
+      Sound.play('ui');
+    }));
+    row.appendChild(picker(Object.keys(FACTIONS).map(k => [k, FACTIONS[k].name]), slot.faction, v => {
+      slot.faction = v;
+      renderSlotTable();
+      Sound.play('ui');
+    }));
+    row.appendChild(picker([['1', '1'], ['2', '2'], ['3', '3'], ['4', '4']],
+      slot.team == null ? 1 : slot.team, v => {
+        slot.team = parseInt(v, 10);
+        renderSlotTable();
+        Sound.play('ui');
+      }, slot.owner === 'empty'));
+    host.appendChild(row);
+  });
+  const issues = rosterIssues(S.slots);
+  const hint = document.getElementById('slot-hint');
+  if (hint) {
+    hint.textContent = issues.length ? '⚠ ' + issues[0]
+      : '至少 1 个玩家、至少 2 个不同队伍编号；空槽位的队伍编号记为 null。';
+    hint.classList.toggle('bad', issues.length > 0);
+  }
+  const preset = activePreset();
+  for (const btn of document.querySelectorAll('#sk-presets button')) {
+    btn.classList.toggle('active', btn.dataset.preset === preset);
+  }
+}
 const AI_PACE = { barracksAt: 10, workshopAt: 90, superDelay: 90, trainMul: 1.0 };
 // 农民征召：临时民兵（不花金币，征召期不产金，20 秒后自动复原，最多同时 3 个）
 const MILITIA = { dmg: 8, hp: 100, range: 1.2, time: 20, max: 3 };
@@ -872,6 +992,7 @@ function syncStartUI() {
   $$('#mode-tabs .mode-tab').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   const cfg = $('#skirmish-config');
   if (cfg) cfg.hidden = mode !== 'skirmish';
+  if (mode === 'skirmish') renderSlotTable();
   if (S.skirmish) {
     $$('#sk-gold button').forEach(b => b.classList.toggle('active', +b.dataset.gold === S.skirmish.gold));
     $$('#sk-inf button').forEach(b => b.classList.toggle('active', +b.dataset.inf === S.skirmish.inf));
@@ -1302,7 +1423,8 @@ function resetWorld() {
   S.stats = { kills: 0, losses: 0, gathered: 0 };
   const L = currentLevel();
   S.faction = (S.run === 'skirmish' && S.skirmish && FACTIONS[S.skirmish.faction]) ? S.skirmish.faction : 'rose';
-  S.slots = defaultSlots(S.faction);
+  // A skirmish keeps the roster the player configured; campaign always uses the default.
+  if (S.run !== 'skirmish' || !S.slots || S.slots.length !== 4) S.slots = defaultSlots(S.faction);
   S.slotErrors = validateSlots(S.slots);
   S.supersEnabled = !(S.run === 'skirmish' && S.skirmish) || !!S.skirmish.supers;
   if (S.run === 'skirmish') {
@@ -1337,19 +1459,46 @@ function resetWorld() {
   }
   S.enemyMods = { ...L.mods };
   S.wave = { n: 0, timer: Math.max(30, DIFFS[S.diffKey].first + L.firstAdd) };
-  // One AIPlayer instance per enemy commander; the 1v1 opponent is the primary one.
-  S.aiPrimary = new AIPlayer({ slot: 1, team: ENEMY });
+  // One AIPlayer instance per roster slot that is run by a computer.
+  for (const slot of S.slots) slot.ai = null;
+  S.aiPrimary = null; S.aiAlly = null;
+  if (S.run === 'skirmish') {
+    const pt = playerTeamOf(S.slots);
+    let hostile = 0;
+    S.slots.forEach((slot, idx) => {
+      if (!slot || slot.owner !== 'ai') return;
+      if (slot.team === pt) {
+        S.aiAlly = new AIPlayer({ slot: idx, team: ALLY, kind: 'ally' });
+        slot.ai = S.aiAlly;
+      } else if (hostile++ === 0) {
+        S.aiPrimary = new AIPlayer({ slot: idx, team: ENEMY, kind: 'primary' });
+        slot.ai = S.aiPrimary;
+      } else {
+        S.aiSecond = new AIPlayer({ slot: idx, team: ENEMY, ai2: true, kind: 'second' });
+        slot.ai = S.aiSecond;
+      }
+    });
+    S.allyEnabled = !!S.aiAlly;
+  } else {
+    S.aiPrimary = new AIPlayer({ slot: 1, team: ENEMY, kind: 'primary' });
+    S.slots[1].ai = S.aiPrimary;
+    if (S.allyEnabled) {
+      S.aiAlly = new AIPlayer({ slot: 3, team: ALLY, kind: 'ally' });
+      S.slots[3].ai = S.aiAlly;
+    }
+  }
+  if (!S.aiPrimary) S.aiPrimary = new AIPlayer({ slot: -1, team: ENEMY, kind: 'primary' });
   S.aiPrimary.super = (S.run === 'skirmish' && S.supersEnabled) ? {
     key: ['fire', 'storm', 'plague'][Math.floor(Math.random() * 3)],
     timer: 90, built: false
   } : null;
-  S.aiAlly = S.allyEnabled ? new AIPlayer({ slot: 3, team: ALLY, kind: 'ally' }) : null;
   // S.teams is the runtime roster: config slots plus the commander driving each of them.
   S.teams = S.slots;
-  S.teams[0].ai = null;
-  S.teams[1].ai = S.aiPrimary;
-  if (S.aiSecond) S.teams[2] = { owner: 'ai', faction: 'raven', team: 3, ai: S.aiSecond };
-  if (S.aiAlly) S.teams[3] = { owner: 'ally', faction: 'rose', team: 1, ai: S.aiAlly };
+  if (S.aiSecond) {
+    const slot = S.slots.find(x => x.ai === S.aiSecond);
+    if (!slot) { S.slots[2] = { owner: 'ai', faction: 'raven', team: 3, ai: S.aiSecond }; }
+  }
+  S.slots[0].ai = null;
   S.lastUnderAttack = -99;
   S.tour = null; S.keys = {}; S.hover = null;
   S.uid = 1;
@@ -6023,6 +6172,7 @@ function bindUI() {
     updateCampaignUI();
     Sound.play('ui');
   }));
+  $$('#sk-presets button').forEach(btn => btn.addEventListener('click', () => applyPreset(btn.dataset.preset)));
   $$('#sk-inf button').forEach(btn => btn.addEventListener('click', () => {
     if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
     S.skirmish.inf = parseInt(btn.dataset.inf, 10);
@@ -6490,6 +6640,16 @@ function startGame() {
   S.tutorial = modeSel === 'tutorial';
   S.tutStep = 0;
   S.run = (modeSel === 'skirmish' || modeSel === 'tutorial') ? 'skirmish' : 'campaign';
+  if (S.run === 'skirmish' && !S.tutorial) {
+    // Roster is validated before the world is thrown away, so a bad table never
+    // costs the player their match.
+    const issues = rosterIssues(S.slots);
+    if (issues.length) {
+      toast(issues[0], 'warn', 'shield');
+      Sound.play('ui');
+      return;
+    }
+  }
   if (S.run === 'skirmish') {
     const gb = $$('#sk-gold button').find(b => b.classList.contains('active'));
     const ib = $$('#sk-inf button').find(b => b.classList.contains('active'));
@@ -6725,7 +6885,7 @@ if (params.get('debug') === '1') {
       warpStats: window.__warpStats || null,
       enemyTypes: S.units.filter(u => u.team === ENEMY).reduce((m, u) => (m[u.type] = (m[u.type] || 0) + 1, m), {}),
       pushLog: S.pushLog || [],
-      slots: S.slots || [],
+      slots: (S.slots || []).map(x => ({ owner: x.owner, faction: x.faction, team: x.team, ai: x.ai ? x.ai.kind : null })),
       slotErrors: S.slotErrors || [],
       uiLog: S.uiLog || null,
       superHits: window.__superHits || 0,
@@ -6789,6 +6949,12 @@ if (params.has('diff') && DIFFS[params.get('diff')]) {
 if (params.get('ally') === '1') {
   S.allyEnabled = true;
   $('#ally-toggle')?.classList.add('active');
+  // the roster is the single source of truth now: give the ally column a slot
+  if (S.slots && S.slots.length === 4) {
+    const pt = playerTeamOf(S.slots);
+    const hasAlly = S.slots.some(x => x.owner === 'ai' && x.team === pt);
+    if (!hasAlly) S.slots[3] = { owner: 'ai', faction: 'pine', team: pt, ai: null };
+  }
 }
 syncStartUI();
 if (params.has('autostart')) {

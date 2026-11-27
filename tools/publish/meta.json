@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "重构 AI 阶段 2：副 AI 与盟友迁入 AIPlayer，引入 S.teams 队伍池（1v1 基线仍等价）",
+  "commitMessage": "v1.8.0 阶段 1：遭遇战阵营分配槽位表（控制方/阵营/队伍 1-4）+ 1v1/1v2/2v2 预设 + 开局前校验",
   "releaseName": "铁与王冠 v1.7.1 · Iron & Crown",
   "releaseBody": "## 铁与王冠 v1.7.1 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 1.7.1 新增：开场动画\n\n- 启动即播 5 秒程序化动画（纯 Canvas 2D + CSS，零图片零视频）：黑场 → 金色盾徽渐显 → 「铁与王冠」打字机 → 副标题淡入 → 发光淡出 → 无缝进序章\n- WebAudio 实时合成一声低频战鼓 + 拔剑声，不依赖任何音频文件\n- **随时跳过**：点击、任意按键、Esc\n- 自动化钩子：`?skipIntro=1`，Electron 另支持 `--skip-intro`\n\n### 1.7.1 修复\n\n- **压缩包解压为空**：旧包条目带 `./` 前缀，资源管理器解压显示 0 项；改用 .NET ZipFile 重新打包，资源管理器与 Expand-Archive 均正常\n- **手机端触屏点选/下令失效**：pointerup 抢先清空 panning，touchend 直接返回\n- **手机版相机居中错位**：底部指令栏被当成右侧栏计算，基地半个在屏外\n- **手机端点按无法放置建筑**：放置格只在 pointermove 更新，而它忽略触摸\n- **GitHub Pages 序章「进入游戏」自指**：指向 game.html\n- 全站补 favicon，消除 404\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
