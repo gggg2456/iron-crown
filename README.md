@@ -9,6 +9,42 @@
 
 ---
 
+## v1.7.1 开场动画 + 手机操作修复 + 压缩包修复
+
+### 开场动画（`web/intro.html`，Electron 启动先播）
+
+纯 Canvas 2D + CSS 绘制，零图片零视频，5 秒四段：
+
+| 时间 | 画面 |
+| --- | --- |
+| 0–1.5s | 纯黑 |
+| 1.5–3.5s | 金色盾徽（多边形 + 渐变 + 高光扫过 + 火星）淡入并轻微放大，主标题「铁与王冠」逐字打出，「IRON & CROWN」与副标题「中世纪 · 红色警戒式即时战略」随后淡入 |
+| 3.5–4.35s | 纹章与标题外发光增强 |
+| 4.35–5.0s | 整体虚化淡出，`location.replace('story.html')` 无缝进序章 |
+
+- **跳过**：动画期间鼠标点击、任意按键、Esc 立即跳过（260ms 淡出后进入序章）
+- **自动化钩子**：`intro.html?skipIntro=1` 直接跳转；Electron 另支持命令行 `--skip-intro`
+- **音效**：WebAudio 实时合成，Logo 出现时一声低频战鼓（78→36Hz 正弦 + 噪声闷击）叠加 0.16s 后的拔剑声（带通噪声 2600→720Hz）；自动播放策略拦截时静默降级
+- **自适应**：`overflow:hidden`，Canvas 按 DPR（上限 2）重排；Electron 1440×900 实测无滚动条
+
+### 手机端修复（详见测试报告）
+
+| 问题 | 根因 | 修复 |
+| --- | --- | --- |
+| 触屏点选/下令全失效 | `pointerup` 早于 `touchend`，`onPointerUp` 抢先把 `S.panning` 清空，`onTouchEnd` 判定后直接 return | 指针处理器遇 `pointerType === 'touch'` 立即返回，触摸全权交给 `onTouchStart/Move/End` |
+| 相机居中错位、基地半个在屏外 | `viewCenter()`/`panBounds()` 只按「右侧栏」算，触屏布局把侧栏移到底部，390px 宽屏中心算成 `x = -2` | `panBounds()` 判断侧栏停靠边（`r.top > VH/2` 为底部），`viewCenter()` 取可视区中心 |
+| 点按无法放置建筑 | 放置格只在 `onPointerMove` 更新，而它对 touch 直接 return，`S.placing` 恒为 `(0,0,invalid)` | `onTouchEnd` 的放置分支先 `screenToWorld` + `canPlace` 再 `placeBuilding()` |
+
+### 打包修复：压缩包解压为空
+
+`tools/package.ps1` 原先用 `tar -a -c -f` 压缩，产物每个条目都带 `./` 前缀（`./IronCrown.exe`）。Windows 资源管理器的解压引擎（Shell.Application）读到这种 zip 会**显示 0 项、解出 0 个文件**——即「解压为空」。
+
+改为 `.NET ZipFile::CreateFromDirectory` 后：根目录 19 项、解出 95 个文件、`IronCrown.exe` 就位，`Expand-Archive` 与资源管理器两条路径均验证通过。
+
+### 其他
+
+- GitHub Pages 序章「进入游戏」改为指向 `game.html`（`build-pages.ps1` 补上裸链接改写，不再自指）
+- 全站补 `<link rel="icon" href="iron-crown.ico">`，消除每次加载的 `/favicon.ico` 404
 
 
 

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>铁与王冠 · 开场</title>
+<link rel="icon" href="iron-crown.ico">
+<script>
+  /* Automation hook: land straight on the menu without watching the intro. */
+  if (new URLSearchParams(location.search).get('skipIntro') === '1') {
+    location.replace('story.html');
+  }
+</script>
+<style>
+  :root{
+    --gold:#d8b363; --gold-bright:#f4dfa6; --gold-deep:#8a6a2f;
+    --parch:#d8c29a; --parch-dim:#9f8a68;
+    --display:"Noto Serif SC","Songti SC","STSong","SimSun",serif;
+    --en:"Cinzel","Trajan Pro","Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:#000;overflow:hidden}
+  body{
+    display:grid;place-items:center;
+    -webkit-user-select:none;user-select:none;cursor:default;
+    font-family:var(--display);color:var(--parch);
+  }
+  #stage{
+    position:relative;width:100%;height:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:clamp(10px,2.4vh,26px);padding:4vh 4vw;
+    transition:opacity .38s ease, filter .38s ease;
+  }
+  #stage.out{opacity:0;filter:blur(6px)}
+  #crest{display:block;width:min(30vh,34vw);height:auto;filter:drop-shadow(0 0 22px rgba(216,179,99,.28))}
+  #titles{text-align:center;line-height:1.15}
+  #title{
+    margin:0;font-size:clamp(26px,5.6vw,64px);font-weight:600;letter-spacing:.22em;
+    color:var(--gold-bright);min-height:1.2em;white-space:nowrap;
+    text-shadow:0 0 14px rgba(216,179,99,.45),0 0 42px rgba(216,179,99,.22);
+  }
+  #title .caret{
+    display:inline-block;width:.06em;height:1em;margin-left:.08em;vertical-align:-.08em;
+    background:var(--gold-bright);opacity:.85;animation:blink .7s steps(1) infinite;
+  }
+  @keyframes blink{50%{opacity:0}}
+  #title-en{
+    margin:.42em 0 0;font-family:var(--en);font-size:clamp(10px,1.5vw,17px);
+    letter-spacing:.52em;text-indent:.52em;color:var(--gold);opacity:0;
+    transition:opacity .6s ease;min-height:1.1em;
+  }
+  #subtitle{
+    margin:.7em 0 0;font-size:clamp(11px,1.5vw,16px);letter-spacing:.3em;text-indent:.3em;
+    color:var(--parch-dim);opacity:0;transition:opacity .9s ease;
+  }
+  #stage.englow #crest{filter:drop-shadow(0 0 34px rgba(240,214,150,.65)) drop-shadow(0 0 70px rgba(216,179,99,.35))}
+  #stage.englow #title{text-shadow:0 0 20px rgba(244,223,166,.75),0 0 60px rgba(216,179,99,.45)}
+  #hint{
+    position:absolute;bottom:max(18px,3.2vh);left:0;right:0;text-align:center;
+    font-size:11px;letter-spacing:.34em;text-indent:.34em;color:rgba(216,179,99,.42);
+    opacity:0;transition:opacity 1s ease;
+  }
+  #stage.t-1500 #hint{opacity:1}
+  /* soft vignette so the black stays black at the edges of any window size */
+  #vignette{
+    position:fixed;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%,transparent 38%,rgba(0,0,0,.72) 100%);
+  }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="crest" width="360" height="420" aria-hidden="true"></canvas>
+    <div id="titles">
+      <h1 id="title"></h1>
+      <p id="title-en">IRON &amp; CROWN</p>
+      <p id="subtitle">中世纪 · 红色警戒式即时战略</p>
+    </div>
+    <div id="hint">点击或按任意键跳过</div>
+  </div>
+  <div id="vignette"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* One timeline drives everything:
+   0.0–1.5s black · 1.5–3.5s crest + typewriter title + subtitle · 3.5–5.0s glow then fade. */
+const T = { black: 1500, crestIn: 1500, crestFull: 3000, typeStart: 1700, typeEnd: 3000,
+            enStart: 2450, enEnd: 3150, subStart: 3000, subEnd: 3700,
+            glowStart: 3500, fadeStart: 4350, done: 5000 };
+const CN_TITLE = '铁与王冠';
+const HINT_AFTER = 1500;
+
+const stage = document.getElementById('stage');
+const cv = document.getElementById('crest');
+const ctx = cv.getContext('2d');
+const elTitle = document.getElementById('title');
+const elEn = document.getElementById('title-en');
+const elSub = document.getElementById('subtitle');
+
+let t0 = performance.now();
+let skipped = false;
+let finished = false;
+
+/* ---------- sizing: crisp on any window, no scrollbars ---------- */
+function fitCanvas() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cssW = cv.clientWidth || 320;
+  const cssH = Math.round(cssW * 420 / 360);
+  cv.style.height = cssH + 'px';
+  cv.width = Math.round(cssW * dpr);
+  cv.height = Math.round(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', fitCanvas);
+
+/* ---------- the crest: pure polygons, no images ---------- */
+function shieldPath(g, w, h) {
+  const cx = w / 2, top = h * 0.06, bot = h * 0.97, half = w * 0.36;
+  g.beginPath();
+  g.moveTo(cx - half, top + h * 0.05);
+  g.lineTo(cx + half, top + h * 0.05);
+  g.lineTo(cx + half, h * 0.5);
+  g.quadraticCurveTo(cx + half * 0.92, h * 0.8, cx, bot);
+  g.quadraticCurveTo(cx - half * 0.92, h * 0.8, cx - half, h * 0.5);
+  g.closePath();
+}
+
+function drawCrest(t, alpha) {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  if (alpha <= 0.001) return;
+  const bob = Math.sin(t / 900) * 1.6;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(0, bob);
+  const grow = 0.94 + 0.06 * Math.min(1, (t - T.crestIn) / (T.crestFull - T.crestIn));
+  ctx.translate(w / 2, h / 2);
+  ctx.scale(grow, grow);
+  ctx.translate(-w / 2, -h / 2);
+
+  // halo
+  const halo = ctx.createRadialGradient(w / 2, h * 0.46, 4, w / 2, h * 0.46, w * 0.62);
+  const haloA = 0.1 + 0.12 * Math.sin(t / 700) * 0.5 + 0.1;
+  halo.addColorStop(0, `rgba(216,179,99,${0.22 * haloA * 4})`);
+  halo.addColorStop(0.55, `rgba(216,179,99,${0.08 * haloA * 4})`);
+  halo.addColorStop(1, 'rgba(216,179,99,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, w, h);
+
+  // shield body
+  shieldPath(ctx, w, h);
+  const body = ctx.createLinearGradient(0, 0, 0, h);
+  body.addColorStop(0, 'rgba(38,31,20,.96)');
+  body.addColorStop(.55, 'rgba(20,17,12,.98)');
+  body.addColorStop(1, 'rgba(10,9,7,1)');
+  ctx.fillStyle = body;
+  ctx.fill();
+
+  // gold rim
+  const rim = ctx.createLinearGradient(w * 0.1, 0, w * 0.9, h);
+  rim.addColorStop(0, '#8a6a2f');
+  rim.addColorStop(.35, '#f0d69a');
+  rim.addColorStop(.62, '#c89b4e');
+  rim.addColorStop(1, '#7a5c28');
+  ctx.lineWidth = Math.max(2, w * 0.012);
+  ctx.strokeStyle = rim;
+  ctx.stroke();
+
+  // inner hairline
+  ctx.save();
+  shieldPath(ctx, w * 0.9, h * 0.9);
+  ctx.translate(w * 0.05, h * 0.04);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(216,179,99,.28)';
+  ctx.stroke();
+  ctx.restore();
+
+  // crown inside the shield
+  const cw = w * 0.44, ch = h * 0.2, cx = w / 2, cy = h * 0.38;
+  ctx.beginPath();
+  ctx.moveTo(cx - cw / 2, cy + ch / 2);
+  ctx.lineTo(cx - cw / 2, cy - ch / 2);
+  ctx.lineTo(cx - cw / 4, cy + ch * 0.06);
+  ctx.lineTo(cx, cy - ch * 0.62);
+  ctx.lineTo(cx + cw / 4, cy + ch * 0.06);
+  ctx.lineTo(cx + cw / 2, cy - ch / 2);
+  ctx.lineTo(cx + cw / 2, cy + ch / 2);
+  ctx.closePath();
+  const crown = ctx.createLinearGradient(cx - cw / 2, cy - ch, cx + cw / 2, cy + ch);
+  crown.addColorStop(0, '#f7e7b8');
+  crown.addColorStop(.45, '#d8b363');
+  crown.addColorStop(1, '#8a6a2f');
+  ctx.fillStyle = crown;
+  ctx.fill();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(255,240,205,.55)';
+  ctx.stroke();
+
+  // three gems on the crown band
+  for (let i = 0; i < 3; i++) {
+    const gx = cx + (i - 1) * cw * 0.26;
+    const gy = cy + ch * 0.28;
+    ctx.beginPath();
+    ctx.arc(gx, gy, Math.max(1.8, w * 0.012), 0, Math.PI * 2);
+    ctx.fillStyle = i === 1 ? 'rgba(200,74,58,.92)' : 'rgba(120,180,160,.6)';
+    ctx.fill();
+  }
+
+  // a slow specular sweep across the shield
+  const sweep = ((t - T.crestIn) / 1400 % 1.6) - 0.3;
+  ctx.save();
+  shieldPath(ctx, w, h);
+  ctx.clip();
+  const sx = w * (sweep * 1.4 - 0.2);
+  const bandGrad = ctx.createLinearGradient(sx, 0, sx + w * 0.22, h);
+  bandGrad.addColorStop(0, 'rgba(255,240,200,0)');
+  bandGrad.addColorStop(.5, 'rgba(255,244,214,.13)');
+  bandGrad.addColorStop(1, 'rgba(255,240,200,0)');
+  ctx.fillStyle = bandGrad;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+
+  // rising embers
+  const tsec = t / 1000;
+  for (let i = 0; i < 14; i++) {
+    const seed = i * 127.31;
+    const px = w * (0.18 + ((Math.sin(seed) + 1) / 2) * 0.64) + Math.sin(tsec * 0.7 + seed) * 8;
+    const life = ((tsec * (0.22 + (i % 5) * 0.045) + seed) % 1);
+    const py = h * (0.9 - life * 0.85);
+    const a = Math.sin(life * Math.PI) * 0.5;
+    ctx.beginPath();
+    ctx.arc(px, py, 0.9 + (i % 3) * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(240,214,150,${a})`;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* ---------- typewriter ---------- */
+let typedCN = 0, typedEN = 0;
+function updateText(t) {
+  const cnN = Math.max(0, Math.min(CN_TITLE.length,
+    Math.floor((t - T.typeStart) / ((T.typeEnd - T.typeStart) / CN_TITLE.length))));
+  if (cnN !== typedCN) {
+    typedCN = cnN;
+    elTitle.textContent = CN_TITLE.slice(0, cnN);
+    if (cnN > 0 && cnN < CN_TITLE.length) {
+      const caret = document.createElement('i');
+      caret.className = 'caret';
+      elTitle.appendChild(caret);
+    }
+  } else if (cnN > 0 && cnN < CN_TITLE.length && !elTitle.querySelector('.caret')) {
+    const caret = document.createElement('i');
+    caret.className = 'caret';
+    elTitle.appendChild(caret);
+  }
+  const enOn = t > T.enStart;
+  elEn.style.opacity = enOn ? String(Math.min(1, (t - T.enStart) / 500)) : '0';
+  elSub.style.opacity = t > T.subStart ? String(Math.min(1, (t - T.subStart) / (T.subEnd - T.subStart))) : '0';
+}
+
+/* ---------- WebAudio: a low war drum plus a blade being drawn ---------- */
+let audioCtx = null;
+function ensureAudio() {
+  if (audioCtx) return audioCtx;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtx = new AC();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  } catch (_) { audioCtx = null; }
+  return audioCtx;
+}
+
+function playIntroSound() {
+  const ac = ensureAudio();
+  if (!ac || ac.state === 'suspended') return;
+  const now = ac.currentTime;
+  const master = ac.createGain();
+  master.gain.value = 0.5;
+  master.connect(ac.destination);
+
+  // war drum: pitch-dropping sine + a short noise thump
+  const drum = ac.createOscillator();
+  const dg = ac.createGain();
+  drum.type = 'sine';
+  drum.frequency.setValueAtTime(78, now);
+  drum.frequency.exponentialRampToValueAtTime(36, now + 0.55);
+  dg.gain.setValueAtTime(0.0001, now);
+  dg.gain.exponentialRampToValueAtTime(0.85, now + 0.012);
+  dg.gain.exponentialRampToValueAtTime(0.0001, now + 1.05);
+  drum.connect(dg).connect(master);
+  drum.start(now);
+  drum.stop(now + 1.1);
+
+  const thumpLen = Math.floor(ac.sampleRate * 0.16);
+  const thumpBuf = ac.createBuffer(1, thumpLen, ac.sampleRate);
+  const td = thumpBuf.getChannelData(0);
+  for (let i = 0; i < thumpLen; i++) td[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / thumpLen, 3);
+  const thump = ac.createBufferSource();
+  const thumpFilter = ac.createBiquadFilter();
+  const tg = ac.createGain();
+  thump.buffer = thumpBuf;
+  thumpFilter.type = 'lowpass';
+  thumpFilter.frequency.setValueAtTime(320, now);
+  tg.gain.value = 0.35;
+  thump.connect(thumpFilter).connect(tg).connect(master);
+  thump.start(now);
+
+  // blade: band-passed noise sliding down, right after the drum hit
+  const sw = 0.42, sLen = Math.floor(ac.sampleRate * sw);
+  const swBuf = ac.createBuffer(1, sLen, ac.sampleRate);
+  const sd = swBuf.getChannelData(0);
+  for (let i = 0; i < sLen; i++) sd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / sLen, 2);
+  const blade = ac.createBufferSource();
+  const bp = ac.createBiquadFilter();
+  const bg = ac.createGain();
+  blade.buffer = swBuf;
+  bp.type = 'bandpass';
+  bp.Q.value = 1.6;
+  bp.frequency.setValueAtTime(2600, now + 0.16);
+  bp.frequency.exponentialRampToValueAtTime(720, now + 0.16 + sw);
+  bg.gain.setValueAtTime(0.0001, now + 0.16);
+  bg.gain.exponentialRampToValueAtTime(0.5, now + 0.2);
+  bg.gain.exponentialRampToValueAtTime(0.0001, now + 0.16 + sw);
+  blade.connect(bp).connect(bg).connect(master);
+  blade.start(now + 0.16);
+}
+
+/* ---------- skip / finish ---------- */
+function finish(reason) {
+  if (finished) return;
+  finished = true;
+  skipped = reason || 'natural';
+  stage.classList.add('out');
+  const go = () => location.replace('story.html');
+  setTimeout(go, 260);
+}
+
+function skipNow() {
+  if (finished) return;
+  finish('user');
+}
+
+window.addEventListener('pointerdown', skipNow, { capture: true });
+window.addEventListener('keydown', e => { e.preventDefault(); skipNow(); }, { capture: true });
+
+/* ---------- main loop ---------- */
+let soundPlayed = false;
+function frame(now) {
+  const t = now - t0;
+  if (t >= HINT_AFTER) stage.classList.add('t-1500');
+  if (t >= T.glowStart) stage.classList.add('englow');
+
+  const crestAlpha = Math.max(0, Math.min(1, (t - T.crestIn) / (T.crestFull - T.crestIn)));
+  drawCrest(t, crestAlpha);
+  updateText(t);
+
+  if (!soundPlayed && t >= T.crestIn) { soundPlayed = true; playIntroSound(); }
+
+  if (t >= T.fadeStart && !finished) {
+    const k = Math.min(1, (t - T.fadeStart) / (T.done - T.fadeStart));
+    stage.style.opacity = String(1 - k * 0.92);
+    stage.style.filter = `blur(${(k * 5).toFixed(1)}px)`;
+  }
+  if (t >= T.done) { finish('natural'); return; }
+  if (!finished) requestAnimationFrame(frame);
+}
+
+/* Test hook: lets automation read the timeline without guessing. */
+window.__introState = () => ({ t: Math.round(performance.now() - t0), finished, skipped,
+  title: elTitle.textContent, subtitleShown: Number(elSub.style.opacity || 0) > 0.2 });
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => { fitCanvas(); t0 = performance.now(); requestAnimationFrame(frame); });
+} else {
+  fitCanvas(); t0 = performance.now(); requestAnimationFrame(frame);
+}
+// a first paint of the black frame, so there is never a white flash
+drawCrest(0, 0);
+})();
+</script>
+</body>
+</html>

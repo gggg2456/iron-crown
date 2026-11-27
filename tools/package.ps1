@@ -39,14 +39,12 @@ $zip = Join-Path $root "dist\IronCrown-$version-win64.zip"
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
 
 Write-Host "==> compress to $zip" -ForegroundColor Cyan
-$tar = Get-Command tar.exe -ErrorAction SilentlyContinue
-if ($tar) {
-  Push-Location $appDir
-  try { & $tar.Source -a -c -f $zip . } finally { Pop-Location }
-  if ($LASTEXITCODE -ne 0) { throw "archive failed (exit $LASTEXITCODE)" }
-} else {
-  Compress-Archive -Path (Join-Path $appDir '*') -DestinationPath $zip -CompressionLevel Optimal
-}
+# Do NOT use `tar -a -c -f` here: it prefixes every entry with "./", and Windows
+# Explorer's extractor then shows the archive as empty (0 items). ZipFile writes
+# plain relative entries, which Explorer, Expand-Archive and 7-Zip all read.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[IO.Compression.ZipFile]::CreateFromDirectory(
+  $appDir, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
 
 $mb = [math]::Round((Get-Item -LiteralPath $zip).Length / 1MB, 1)
 Write-Host "==> done: $zip ($mb MB)" -ForegroundColor Green

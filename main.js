@@ -22,7 +22,9 @@ function createWindow() {
     }
   });
   Menu.setApplicationMenu(null);
-  win.loadFile(path.join(__dirname, 'web', 'story.html'));
+  // The intro plays first; --skip-intro keeps automated runs and crash-restarts fast.
+  const skipIntro = process.argv.includes('--skip-intro');
+  win.loadFile(path.join(__dirname, 'web', skipIntro ? 'story.html' : 'intro.html'));
   win.once('ready-to-show', () => win.show());
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) shell.openExternal(url);
