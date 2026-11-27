@@ -1587,7 +1587,10 @@ function sidebarWidth() {
   return el ? el.getBoundingClientRect().width + 36 : 340;
 }
 function viewCenter() {
-  return { x: (VW - sidebarWidth()) / 2 + 8, y: VH / 2 + 10 };
+  // Centre of the actually playable area: the touch layout docks #sidebar to the
+  // bottom, so a right-column deduction would push the centre off-screen.
+  const b = panBounds();
+  return { x: (b.left + b.right) / 2, y: (b.top + b.bottom) / 2 };
 }
 function centerCamera(x, y, z = S.cam.z, instant = true) {
   S.cam.z = clamp(z, .62, 1.55);
@@ -1616,7 +1619,12 @@ function panBounds() {
   const side = document.getElementById('sidebar');
   if (side && S.mode !== 'menu') {
     const r = side.getBoundingClientRect();
-    if (r.width > 4) b.right = Math.min(b.right, r.left - 2);
+    if (r.width > 4 && r.height > 4) {
+      // touch layout docks the sidebar to the bottom edge (full-width bar);
+      // the desktop one is a right-hand column. Deduct whichever edge it covers.
+      if (r.top > VH * 0.5) b.bottom = Math.min(b.bottom, r.top - 2);
+      else b.right = Math.min(b.right, r.left - 2);
+    }
   }
   const hint = document.getElementById('hintbar');
   if (hint && !hint.hidden) {
@@ -6107,7 +6115,17 @@ function onTouchEnd(e) {
   const sx = t.clientX - r.left, sy = t.clientY - r.top;
   S.mouse.x = sx; S.mouse.y = sy;
   const hit = pickAt(sx, sy);
-  if (S.placing) { placeBuilding(); return; }
+  if (S.placing) {
+    // onPointerMove normally tracks the placement tile, but it ignores touch,
+    // so derive the tile from the tap before placing.
+    const d = B[S.placing.type];
+    const w = screenToWorld(sx, sy);
+    S.placing.tx = Math.round(w.x - d.w / 2);
+    S.placing.ty = Math.round(w.y - d.d / 2);
+    S.placing.valid = canPlace(S.placing.type, S.placing.tx, S.placing.ty);
+    placeBuilding();
+    return;
+  }
   if (S.superAim) { castSuperAt(t.clientX, t.clientY); return; }
   if (S.miniAim) { const w = screenToWorld(sx, sy); applyMiniAt(w.x, w.y); return; }
   const spies = S.selected.filter(u => u.type === 'spy' && u.hp > 0 && !u.garrisoned);
@@ -6119,6 +6137,10 @@ function onTouchEnd(e) {
   clearSelection();
 }
 function onPointerDown(e) {
+  // Touch is handled end-to-end by onTouchStart/onTouchMove/onTouchEnd. Chromium fires
+  // pointerup *before* touchend, so letting the pointer handlers touch S.panning here
+  // would clear it and make onTouchEnd skip every tap (no select, no command).
+  if (e.pointerType === 'touch') return;
   if (S.mode !== 'playing' || S.paused) return;
   if (e.button === 1) {
     e.preventDefault();
@@ -6221,6 +6243,7 @@ function onPointerMove(e) {
   }
 }
 function onPointerUp(e) {
+  if (e.pointerType === 'touch') return;   // onTouchEnd finishes touch taps; keep S.panning for it
   if (S.superAim || S.miniAim || S.forceAim) { S.drag = null; return; }
   if (S.panning) { S.panning = null; canvas.style.cursor = 'default'; return; }
   if (!S.drag) return;

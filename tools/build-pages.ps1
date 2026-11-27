@@ -41,6 +41,9 @@ $game = [IO.File]::ReadAllText((Join-Path $web 'index.html'), $utf8)
 # story page -> site root index.html, with entry links pointing at game.html
 $story = [IO.File]::ReadAllText((Join-Path $web 'story.html'), $utf8)
 $story = $story.Replace('index.html?autostart=1', 'game.html?autostart=1')
+# the prologue CTA is a plain href="index.html"; on the site root that file is this
+# very page, so it has to be rewritten too or the button reloads the prologue.
+$story = $story.Replace('href="index.html"', 'href="game.html"')
 [IO.File]::WriteAllText((Join-Path $docs 'index.html'), $story, $utf8)
 
 # keep Jekyll away
