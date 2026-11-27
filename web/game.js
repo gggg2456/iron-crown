@@ -673,7 +673,7 @@ const S = {
   mapTheme: 'border',
   enemySite: { x: 34, y: 8 },
   allySite: { x: 44, y: 38 },
-  allyEnabled: false, allyAI: null,
+  allyEnabled: false,
   tour: null
 };
 
@@ -1317,8 +1317,8 @@ function resetWorld() {
   }
   // 每局从几个远处营地中抽取一个，避免黑鸦主堡永远出现在同一个角落。
   S.enemySite = ENEMY_SITES[Math.floor(Math.random() * ENEMY_SITES.length)];
-  S.enemy2Site = null;
-  S.secondAI = null;
+  S.secondSite = null;
+  S.aiSecond = null;
   const allyChoices = ALLY_SITES.filter(s =>
     Math.hypot(s.x - S.enemySite.x, s.y - S.enemySite.y) > 13
     && Math.hypot(s.x - 7, s.y - 31) > 18);
@@ -1331,9 +1331,9 @@ function resetWorld() {
       Math.hypot(s.x - 7, s.y - 31) > 22
       && Math.hypot(s.x - S.enemySite.x, s.y - S.enemySite.y) > 14
       && (!S.allyEnabled || Math.hypot(s.x - S.allySite.x, s.y - S.allySite.y) > 12));
-    S.enemy2Site = choices.length ? choices[Math.floor(Math.random() * choices.length)]
+    S.secondSite = choices.length ? choices[Math.floor(Math.random() * choices.length)]
       : (ENEMY_SITES.find(s => Math.hypot(s.x - S.enemySite.x, s.y - S.enemySite.y) > 12) || ENEMY_SITES[0]);
-    S.secondAI = { nextSpawn: 12, attackTimer: 55, baseVehicleTimer: 25, retry: 0 };
+    S.aiSecond = new AIPlayer({ slot: 2, team: ENEMY, ai2: true, kind: 'second' });
   }
   S.enemyMods = { ...L.mods };
   S.wave = { n: 0, timer: Math.max(30, DIFFS[S.diffKey].first + L.firstAdd) };
@@ -1343,7 +1343,13 @@ function resetWorld() {
     key: ['fire', 'storm', 'plague'][Math.floor(Math.random() * 3)],
     timer: 90, built: false
   } : null;
-  S.allyAI = S.allyEnabled ? { timer: 5, orderTimer: 3 } : null;
+  S.aiAlly = S.allyEnabled ? new AIPlayer({ slot: 3, team: ALLY, kind: 'ally' }) : null;
+  // S.teams is the runtime roster: config slots plus the commander driving each of them.
+  S.teams = S.slots;
+  S.teams[0].ai = null;
+  S.teams[1].ai = S.aiPrimary;
+  if (S.aiSecond) S.teams[2] = { owner: 'ai', faction: 'raven', team: 3, ai: S.aiSecond };
+  if (S.aiAlly) S.teams[3] = { owner: 'ally', faction: 'rose', team: 1, ai: S.aiAlly };
   S.lastUnderAttack = -99;
   S.tour = null; S.keys = {}; S.hover = null;
   S.uid = 1;
@@ -1416,8 +1422,8 @@ function resetWorld() {
   } else {
     addUnit('baseVehicle', PLAYER, 9.65, 36.35);
     addUnit('baseVehicle', ENEMY, eb.x + 2.55, eb.y + 5.8);
-    if (S.secondAI && S.enemy2Site) {
-      const u = addUnit('baseVehicle', ENEMY, S.enemy2Site.x + 2.55, S.enemy2Site.y + 5.8);
+    if (S.aiSecond && S.secondSite) {
+      const u = addUnit('baseVehicle', ENEMY, S.secondSite.x + 2.55, S.secondSite.y + 5.8);
       u.ai2 = true;
     }
   }
@@ -3144,11 +3150,24 @@ class AIPlayer {
     this.slot = (opts.slot === undefined) ? -1 : opts.slot;
     this.team = opts.team || ENEMY;      // unit team this commander controls
     this.ai2 = !!opts.ai2;               // second legion: owns only the units tagged ai2
+    this.kind = opts.kind || 'primary';  // primary | second | ally
     this.enabled = opts.enabled !== false;
     this.super = null;
     this.reset();
   }
   reset() {
+    if (this.kind === 'second') {
+      this.nextSpawn = 12;
+      this.attackTimer = 55;
+      this.baseVehicleTimer = 25;
+      this.retry = 0;
+      return;
+    }
+    if (this.kind === 'ally') {
+      this.timer = 5;
+      this.orderTimer = 3;
+      return;
+    }
     this.nextTrain = 12;
     this.tacticTimer = 0;
     this.baseVehicleTimer = 18;
@@ -3166,6 +3185,11 @@ class AIPlayer {
   /* ---- tick ------------------------------------------------------------- */
   update(dt) {
     if (S.tutorial || !this.enabled) return;
+    if (this.kind === 'second') return this.updateSecond(dt);
+    if (this.kind === 'ally') return this.updateAlly(dt);
+    return this.updatePrimary(dt);
+  }
+  updatePrimary(dt) {
     const diff = DIFFS[S.diffKey];
     const L = currentLevel();
     this.buildRetry -= dt;
@@ -3375,6 +3399,96 @@ class AIPlayer {
     }
     return false;
   }
+  /* ---- second legion (campaign level 3+) -------------------------------- */
+  updateSecond(dt) {
+    if (this.baseVehicleTimer > 0) {
+      this.baseVehicleTimer -= dt;
+      if (this.baseVehicleTimer <= 0) {
+        const bv = S.units.find(u => u.ai2 && u.team === this.team && u.type === 'baseVehicle' && u.hp > 0);
+        if (bv && !this.deploySecondBaseVehicle(bv)) this.baseVehicleTimer = 8;
+      }
+    }
+    const keep = S.buildings.find(b => b.team === this.team && b.type === 'keep' && b.ai2 && b.hp > 0);
+    if (!keep) return;
+    this.nextSpawn -= dt;
+    if (this.nextSpawn <= 0) {
+      this.nextSpawn = Math.max(14, 22 - S.campaignLevel * 1.5);
+      const pool = S.campaignLevel >= 4
+        ? ['swordsman', 'archer', 'crossbowman', 'knight']
+        : ['spearman', 'swordsman', 'archer'];
+      const count = 2 + Math.min(2, Math.floor(S.campaignLevel / 3));
+      for (let i = 0; i < count; i++) {
+        const p = spawnPointFor(keep);
+        const u = addUnit(pool[Math.floor(Math.random() * pool.length)], ENEMY, p.x + rnd(-1, 1), p.y + rnd(-.5, .5));
+        u.ai2 = true;
+        u.order = { type: 'move', x: keep.x + rnd(-2.5, 2.5), y: keep.y + rnd(2, 4) };
+      }
+      floatText(keep.x, keep.y - 1, '第二军团集结', '#d7a0ff');
+    }
+    this.attackTimer -= dt;
+    if (this.attackTimer > 0) return;
+    const army = S.units.filter(u => u.team === ENEMY && u.ai2 && u.hp > 0 && !u.garrisoned && u.type !== 'baseVehicle');
+    const target = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0)
+      || S.units.find(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned);
+    if (!target || army.length < 3) { this.attackTimer = 10; return; }
+    for (const u of army) {
+      u.order = { type: 'attackMove', x: target.x + rnd(-2, 2), y: target.y + rnd(-2, 2) };
+      u.target = null;
+    }
+    this.attackTimer = 24;
+    toast(enemyFactionName() + '第二军团发起进攻', 'warn', 'shield');
+    Sound.play('hornlow');
+  }
+  deploySecondBaseVehicle(u) {
+    if (!u || !u.ai2 || u.team !== ENEMY || u.type !== 'baseVehicle' || u.hp <= 0) return false;
+    if (S.buildings.some(b => b.team === ENEMY && b.type === 'keep' && b.ai2 && b.hp > 0)) return false;
+    for (let r = 3; r <= 11; r++) {
+      for (let a = 0; a < 16; a++) {
+        const tx = clamp(Math.round(u.x + Math.cos(a * Math.PI / 8) * r - 1.5), 0, MAP - 3);
+        const ty = clamp(Math.round(u.y + Math.sin(a * Math.PI / 8) * r - 1.5), 0, MAP - 3);
+        if (!canPlace('keep', tx, ty, { ignoreBuildRadius: true })) continue;
+        S.units = S.units.filter(x => x !== u);
+        const b = addBuilding('keep', tx, ty, ENEMY);
+        b.constructed = true; b.progress = 1; b.ai2 = true;
+        burst(b.x, b.y, 'dust', 20);
+        return true;
+      }
+    }
+    return false;
+  }
+  /* ---- ally column ------------------------------------------------------ */
+  updateAlly(dt) {
+    if (!S.allyEnabled) return;
+    const base = allyBase();
+    if (!base) return;
+    this.timer -= dt;
+    if (this.timer <= 0) {
+      this.timer = Math.max(7, 12 - S.campaignLevel * .7);
+      const army = S.units.filter(u => u.team === ALLY && u.type !== 'peasant' && u.hp > 0);
+      if (army.length < 10 + S.campaignLevel * 2) {
+        const pool = S.campaignLevel >= 2
+          ? ['swordsman', 'archer', 'crossbowman', 'knight']
+          : ['spearman', 'swordsman', 'archer'];
+        const type = pool[Math.floor(Math.random() * pool.length)];
+        const p = spawnPointFor(base);
+        const u = addUnit(type, ALLY, p.x + rnd(-.8, .8), p.y);
+        u.order = { type: 'move', x: base.x + rnd(-2.5, 2.5), y: base.y + rnd(1.5, 3.5) };
+        floatText(u.x, u.y, '盟军援兵', '#9de0bd');
+      }
+    }
+    this.orderTimer -= dt;
+    if (this.orderTimer > 0) return;
+    this.orderTimer = 5;
+    const enemyKeep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
+    for (const u of S.units) {
+      if (u.team !== ALLY || u.hp <= 0 || u.garrisoned) continue;
+      const near = findSmartTarget(u, 11);
+      if (near) { orderAttack(u, near); continue; }
+      if (!u.order && !u.target && enemyKeep) {
+        u.order = { type: 'attackMove', x: enemyKeep.x, y: enemyKeep.y };
+      }
+    }
+  }
   /* ---- unit-level tactics ----------------------------------------------- */
   updateTactics() {
     const keep = this.structures('keep');
@@ -3425,106 +3539,15 @@ function enemySuperTarget() {
 }
 function updateAI(dt) {
   if (S.tutorial) return;
-  if (S.aiPrimary) S.aiPrimary.update(dt);
-  updateSecondAI(dt);
+  for (const slot of (S.teams || [])) {
+    if (slot && slot.ai) slot.ai.update(dt);
+  }
 }
 
 function allyBase() {
   return S.buildings.find(b => b.team === ALLY && b.type === 'keep')
     || S.buildings.find(b => b.team === ALLY && b.type === 'barracks');
 }
-function deploySecondBaseVehicle(u) {
-  if (!u || !u.ai2 || u.team !== ENEMY || u.type !== 'baseVehicle' || u.hp <= 0) return false;
-  if (S.buildings.some(b => b.team === ENEMY && b.type === 'keep' && b.ai2 && b.hp > 0)) return false;
-  for (let r = 3; r <= 11; r++) {
-    for (let a = 0; a < 16; a++) {
-      const tx = clamp(Math.round(u.x + Math.cos(a * Math.PI / 8) * r - 1.5), 0, MAP - 3);
-      const ty = clamp(Math.round(u.y + Math.sin(a * Math.PI / 8) * r - 1.5), 0, MAP - 3);
-      if (!canPlace('keep', tx, ty, { ignoreBuildRadius: true })) continue;
-      S.units = S.units.filter(x => x !== u);
-      const b = addBuilding('keep', tx, ty, ENEMY);
-      b.constructed = true; b.progress = 1; b.ai2 = true;
-      burst(b.x, b.y, 'dust', 22);
-      return true;
-    }
-  }
-  return false;
-}
-function updateSecondAI(dt) {
-  if (S.tutorial) return;
-  if (!S.secondAI) return;
-  if (S.secondAI.baseVehicleTimer > 0) {
-    S.secondAI.baseVehicleTimer -= dt;
-    if (S.secondAI.baseVehicleTimer <= 0) {
-      const bv = S.units.find(u => u.ai2 && u.team === ENEMY && u.type === 'baseVehicle' && u.hp > 0);
-      if (bv && !deploySecondBaseVehicle(bv)) S.secondAI.baseVehicleTimer = 8;
-    }
-  }
-  const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep' && b.ai2 && b.hp > 0);
-  if (!keep) return;
-  S.secondAI.nextSpawn -= dt;
-  if (S.secondAI.nextSpawn <= 0) {
-    S.secondAI.nextSpawn = Math.max(14, 22 - S.campaignLevel * 1.5);
-    const pool = S.campaignLevel >= 4
-      ? ['swordsman', 'archer', 'crossbowman', 'knight']
-      : ['spearman', 'swordsman', 'archer'];
-    const count = 2 + Math.min(2, Math.floor(S.campaignLevel / 3));
-    for (let i = 0; i < count; i++) {
-      const p = spawnPointFor(keep);
-      const u = addUnit(pool[Math.floor(Math.random() * pool.length)], ENEMY, p.x + rnd(-1, 1), p.y + rnd(-.5, .5));
-      u.ai2 = true;
-      u.order = { type: 'move', x: keep.x + rnd(-2.5, 2.5), y: keep.y + rnd(2, 4) };
-    }
-    floatText(keep.x, keep.y - 1, '第二军团集结', '#d7a0ff');
-  }
-  S.secondAI.attackTimer -= dt;
-  if (S.secondAI.attackTimer > 0) return;
-  const army = S.units.filter(u => u.team === ENEMY && u.ai2 && u.hp > 0 && !u.garrisoned && u.type !== 'baseVehicle');
-  const target = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0)
-    || S.units.find(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned);
-  if (!target || army.length < 3) { S.secondAI.attackTimer = 10; return; }
-  for (const u of army) {
-    u.order = { type: 'attackMove', x: target.x + rnd(-2, 2), y: target.y + rnd(-2, 2) };
-    u.target = null;
-  }
-  S.secondAI.attackTimer = 24;
-  toast(enemyFactionName() + '第二军团发起进攻', 'warn', 'shield');
-  Sound.play('hornlow');
-}
-function updateAllyAI(dt) {
-  if (S.tutorial) return;
-  if (!S.allyEnabled || !S.allyAI) return;
-  const base = allyBase();
-  if (!base) return;
-  S.allyAI.timer -= dt;
-  if (S.allyAI.timer <= 0) {
-    S.allyAI.timer = Math.max(7, 12 - S.campaignLevel * .7);
-    const army = S.units.filter(u => u.team === ALLY && u.type !== 'peasant' && u.hp > 0);
-    if (army.length < 10 + S.campaignLevel * 2) {
-      const pool = S.campaignLevel >= 2
-        ? ['swordsman', 'archer', 'crossbowman', 'knight']
-        : ['spearman', 'swordsman', 'archer'];
-      const type = pool[Math.floor(Math.random() * pool.length)];
-      const p = spawnPointFor(base);
-      const u = addUnit(type, ALLY, p.x + rnd(-.8, .8), p.y);
-      u.order = { type: 'move', x: base.x + rnd(-2.5, 2.5), y: base.y + rnd(1.5, 3.5) };
-      floatText(u.x, u.y, '盟军援兵', '#9de0bd');
-    }
-  }
-  S.allyAI.orderTimer -= dt;
-  if (S.allyAI.orderTimer > 0) return;
-  S.allyAI.orderTimer = 5;
-  const enemyKeep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
-  for (const u of S.units) {
-    if (u.team !== ALLY || u.hp <= 0 || u.garrisoned) continue;
-    const near = findSmartTarget(u, 11);
-    if (near) { orderAttack(u, near); continue; }
-    if (!u.order && !u.target && enemyKeep) {
-      u.order = { type: 'attackMove', x: enemyKeep.x, y: enemyKeep.y };
-    }
-  }
-}
-
 /* ------------- game update ------------- */
 function update(dt) {
   S.time += dt;
@@ -3548,7 +3571,6 @@ function update(dt) {
   S.superFx = S.superFx.filter(f => f.t < f.dur);
   updateCamera(dt);
   updateAI(dt);
-  updateAllyAI(dt);
   for (const u of [...S.units]) updateUnit(u, dt);
   updateBuildings(dt);
   updateProjectiles(dt);
