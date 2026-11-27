@@ -663,6 +663,46 @@ const ALLY_SITES = [
   { x: 40, y: 46 },  // 东南海岸
   { x: 48, y: 44 }   // 东南远哨
 ];
+/* Four symmetric starting positions used when a skirmish has 3-4 bases.
+   SW / NE mirror the two curated bases; NW / SE keep every team the same
+   distance from the central gold. */
+const SKIRMISH_SPAWNS = [
+  { x: 8.5, y: 32.5 },   // SW  (curated player base)
+  { x: 35.5, y: 9.5 },   // NE  (curated enemy base)
+  { x: 10, y: 12 },     // NW (kept clear of the north-west woods)
+  { x: 35, y: 31 }      // SE (gap between the eastern and southern groves)
+];
+function skirmishSpawnSites() {
+  if (S.run !== 'skirmish') return null;
+  const filled = (S.slots || []).filter(x => x && x.owner !== 'empty');
+  if (filled.length <= 2) return null;   // 1v1 keeps the curated map layout
+  const theme = MAP_THEMES[S.mapTheme] || MAP_THEMES.border;
+  const base = (theme.spawns && theme.spawns.length >= 4) ? theme.spawns : SKIRMISH_SPAWNS;
+  let k = 0;
+  return filled.map(slot => {
+    const site = base[k % base.length];
+    k++;
+    return { x: site.x, y: site.y, slot: S.slots.indexOf(slot), team: slot.team };
+  });
+}
+function hostileAICount() {
+  const pt = playerTeamOf(S.slots);
+  return (S.slots || []).filter(x => x && x.owner === 'ai' && x.team !== pt).length;
+}
+function teamIdForTeam(team) {
+  if (team === PLAYER || team === ALLY) return playerTeamOf(S.slots);
+  return (S.aiPrimary && S.aiPrimary.teamId != null) ? S.aiPrimary.teamId : 2;
+}
+function teamColorOf(o, kind) {
+  const pt = playerTeamOf(S.slots);
+  const t = (o && o.teamId != null) ? o.teamId
+    : (o && (o.team === PLAYER || o.team === ALLY) ? pt : 2);
+  if (t === pt) return kind === 'b' ? '#79c979' : '#c8ffb2';
+  if (t === 2) return kind === 'b' ? '#d8503f' : '#ff8a72';
+  if (t === 3) return kind === 'b' ? '#8459cf' : '#b98cff';
+  return kind === 'b' ? '#c99240' : '#f0c98a';
+}
+
 const MAP_THEMES = {
   border: {
     name: '边境河谷',
@@ -1324,7 +1364,7 @@ function addUnit(type, team, x, y) {
     gatherTimer: 0, moving: false, facing: 1, flash: 0, phase: rnd(0, 9),
     cleaveCd: 0, lastHurt: -99, healTimer: rnd(0, 1.2),
     rank: 1, xp: 0, kills: 0, garrisoned: null,
-    scan: 0, home: { x, y }, dead: false
+    scan: 0, home: { x, y }, dead: false, teamId: teamIdForTeam(team)
   };
   S.units.push(u);
   pushOutOfBuildings(u);
@@ -1361,6 +1401,7 @@ function clearKeepArea(tx, ty) {
 }
 function spawnSkirmishStart() {
   const cfg = S.skirmish || { gold: 2000, inf: 4, supers: true };
+  if (S.spawnSites) return spawnSkirmishRoster(cfg);
   const pSpot = findKeepSpot(8.5, 32.5);
   const eSpot = findKeepSpot(S.enemySite.x + 1.5, S.enemySite.y + 1.5);
   if (pSpot) { clearKeepArea(pSpot.tx, pSpot.ty); addBuilding('keep', pSpot.tx, pSpot.ty, PLAYER); }
@@ -1391,6 +1432,43 @@ function spawnSkirmishStart() {
       clearKeepArea(bs.tx, bs.ty);
       const bk = addBuilding('barracks', bs.tx, bs.ty, PLAYER);
       bk.constructed = true; bk.progress = 1;
+    }
+  }
+  if (!S.buildings.some(b => b.type === 'keep')) {
+    setTimeout(() => toast('开局落位失败，已退化为基地车开局：请先展开基地。', 'warn', 'workshop'), 1200);
+  }
+}
+
+/* Multi-base start: one keep (or base vehicle) per filled slot, placed on the
+   symmetric sites, with the same number of starting troops for every side. */
+function spawnSkirmishRoster(cfg) {
+  const pt = playerTeamOf(S.slots);
+  const roster = ['spearman', 'swordsman', 'archer', 'crossbowman'];
+  const n = clamp(cfg.inf | 0, 0, 12);
+  for (const site of S.spawnSites) {
+    const slot = S.slots[site.slot];
+    if (!slot || slot.owner === 'empty') continue;
+    const team = slot.owner === 'player' ? PLAYER : (slot.team === pt ? ALLY : ENEMY);
+    const spot = findKeepSpot(site.x, site.y);
+    if (spot) {
+      clearKeepArea(spot.tx, spot.ty);
+      const b = addBuilding('keep', spot.tx, spot.ty, team);
+      b.teamId = slot.team;
+      if (team === ENEMY && slot.ai && slot.ai.ai2) b.ai2 = true;
+    } else {
+      const u = addUnit('baseVehicle', team, site.x + .5, site.y + 2.5);
+      u.teamId = slot.team;
+      if (team === ENEMY && slot.ai && slot.ai.ai2) u.ai2 = true;
+    }
+    const keep = S.buildings.find(b => b.team === team && b.type === 'keep' && Math.hypot(b.x - site.x, b.y - site.y) < 12);
+    const cx = keep ? keep.x : site.x, cy = keep ? keep.y + 1.6 : site.y + 2;
+    for (let i = 0; i < n; i++) {
+      const a = (i / Math.max(1, n)) * Math.PI * 2 + (team === PLAYER ? 0 : .45);
+      const rr = 2.3 + (i % 2) * .8;
+      const u = addUnit(roster[i % roster.length], team, cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+      u.teamId = slot.team;
+      if (team === ENEMY && slot.ai && slot.ai.ai2) u.ai2 = true;
+      u.order = { type: 'move', x: cx + Math.cos(a) * (rr + 1.5), y: cy + Math.sin(a) * (rr + 1.5) };
     }
   }
   if (!S.buildings.some(b => b.type === 'keep')) {
@@ -1437,6 +1515,8 @@ function resetWorld() {
   } else {
     S.mapTheme = L.map || 'border';
   }
+  // 3-4 个基地时改用对称出生点；1v1（默认）仍走原来的单点布局。
+  S.spawnSites = skirmishSpawnSites();
   // 每局从几个远处营地中抽取一个，避免黑鸦主堡永远出现在同一个角落。
   S.enemySite = ENEMY_SITES[Math.floor(Math.random() * ENEMY_SITES.length)];
   S.secondSite = null;
@@ -1455,7 +1535,7 @@ function resetWorld() {
       && (!S.allyEnabled || Math.hypot(s.x - S.allySite.x, s.y - S.allySite.y) > 12));
     S.secondSite = choices.length ? choices[Math.floor(Math.random() * choices.length)]
       : (ENEMY_SITES.find(s => Math.hypot(s.x - S.enemySite.x, s.y - S.enemySite.y) > 12) || ENEMY_SITES[0]);
-    S.aiSecond = new AIPlayer({ slot: 2, team: ENEMY, ai2: true, kind: 'second' });
+    S.aiSecond = new AIPlayer({ slot: 2, team: ENEMY, ai2: true, kind: 'second', teamId: 3 });
   }
   S.enemyMods = { ...L.mods };
   S.wave = { n: 0, timer: Math.max(30, DIFFS[S.diffKey].first + L.firstAdd) };
@@ -1468,13 +1548,13 @@ function resetWorld() {
     S.slots.forEach((slot, idx) => {
       if (!slot || slot.owner !== 'ai') return;
       if (slot.team === pt) {
-        S.aiAlly = new AIPlayer({ slot: idx, team: ALLY, kind: 'ally' });
+        S.aiAlly = new AIPlayer({ slot: idx, team: ALLY, kind: 'ally', teamId: slot.team });
         slot.ai = S.aiAlly;
       } else if (hostile++ === 0) {
-        S.aiPrimary = new AIPlayer({ slot: idx, team: ENEMY, kind: 'primary' });
+        S.aiPrimary = new AIPlayer({ slot: idx, team: ENEMY, kind: 'primary', teamId: slot.team });
         slot.ai = S.aiPrimary;
       } else {
-        S.aiSecond = new AIPlayer({ slot: idx, team: ENEMY, ai2: true, kind: 'second' });
+        S.aiSecond = new AIPlayer({ slot: idx, team: ENEMY, ai2: true, kind: 'second', teamId: slot.team });
         slot.ai = S.aiSecond;
       }
     });
@@ -1506,7 +1586,8 @@ function resetWorld() {
 
   // Both sides start bare: one mobile base vehicle, no pre-built structures or army.
   const eb = S.enemySite;
-  if (S.allyEnabled) {
+  // The campaign ally column spawns here; in skirmish the ally comes from the roster.
+  if (S.allyEnabled && S.run !== 'skirmish') {
     const ab = S.allySite;
     addBuilding('keep', ab.x, ab.y, ALLY);
     addBuilding('barracks', ab.x, ab.y + 3, ALLY);
@@ -1520,6 +1601,20 @@ function resetWorld() {
   // gold veins
   const theme = MAP_THEMES[S.mapTheme] || MAP_THEMES.border;
   for (const [gx, gy] of theme.gold) addGold(gx, gy);
+  // 多出生点：给每个新基地补齐同等数量的近矿，避免位置差异变成经济差异。
+  if (S.spawnSites) {
+    for (const site of S.spawnSites) {
+      const near = S.goldNodes.filter(g => Math.hypot(g.x - site.x, g.y - site.y) < 9).length;
+      const offsets = [[4, -1], [1, 4], [-3, 3]];
+      for (let k = near; k < 2; k++) {
+        const off = offsets[k % offsets.length];
+        const tx = Math.round(site.x + off[0]), ty = Math.round(site.y + off[1]);
+        if (!inMap(tx, ty)) continue;
+        if (S.goldNodes.some(g => Math.abs(g.tx - tx) < 3 && Math.abs(g.ty - ty) < 3)) continue;
+        addGold(tx, ty);
+      }
+    }
+  }
 
   generateTerrain();
 
@@ -3267,7 +3362,8 @@ function launchWave() {
   if (!keep) { S.wave.timer = 3; return; }
   S.wave.n++;
   if (!S.aiTimes.firstWave) S.aiTimes.firstWave = Math.round(S.time);
-  const desired = diff.base + Math.floor(S.wave.n * diff.grow) + (L.extra || 0);
+  const share = hostileAICount() > 1 ? 1.5 : 1;   // 同队多指挥官的波次共享兵池
+  const desired = Math.round((diff.base + Math.floor(S.wave.n * diff.grow) + (L.extra || 0)) * share);
   const barracks = S.buildings.find(b => b.team === ENEMY && b.type === 'barracks');
   const waveUnits = [];
   for (let i = 0; i < desired; i++) {
@@ -3300,6 +3396,7 @@ class AIPlayer {
     this.team = opts.team || ENEMY;      // unit team this commander controls
     this.ai2 = !!opts.ai2;               // second legion: owns only the units tagged ai2
     this.kind = opts.kind || 'primary';  // primary | second | ally
+    this.teamId = (opts.teamId === undefined) ? 2 : opts.teamId;
     this.enabled = opts.enabled !== false;
     this.super = null;
     this.reset();
@@ -3357,6 +3454,7 @@ class AIPlayer {
           const type = pickEnemyType(Math.random());
           const p = spawnPointFor(base);
           const u = addUnit(type, this.team, p.x + rnd(-.8, .8), p.y);
+          u.teamId = this.teamId;
           if (this.ai2) u.ai2 = true;
           u.order = { type: 'move', x: base.x + rnd(-2, 2), y: base.y + rnd(1.5, 3) };
         }
@@ -3446,6 +3544,7 @@ class AIPlayer {
         if (!canPlace('barracks', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
         nudgeUnitsOut(tx, ty, 2, 2);
         const b = addBuilding('barracks', tx, ty, this.team);
+        b.teamId = this.teamId;
         b.constructed = true; b.progress = 1;
         if (this.ai2) b.ai2 = true;
         burst(b.x, b.y, 'dust', 14);
@@ -3465,6 +3564,7 @@ class AIPlayer {
         const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 3);
         if (!canPlace('fountain', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
         const b = addBuilding('fountain', tx, ty, this.team);
+        b.teamId = this.teamId;
         b.constructed = true; b.progress = 1;
         if (this.ai2) b.ai2 = true;
         burst(b.x, b.y, 'dust', 14);
@@ -3485,6 +3585,7 @@ class AIPlayer {
         if (!canPlace('workshop', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
         nudgeUnitsOut(tx, ty, 3, 3);
         const b = addBuilding('workshop', tx, ty, this.team);
+        b.teamId = this.teamId;
         b.constructed = true; b.progress = 1;
         b.builtAt = S.time;
         if (this.ai2) b.ai2 = true;
@@ -3514,6 +3615,7 @@ class AIPlayer {
         if (!canPlace(type, tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
         nudgeUnitsOut(tx, ty, B[type].w, B[type].d);
         const b = addBuilding(type, tx, ty, this.team);
+        b.teamId = this.teamId;
         b.constructed = true; b.progress = 1;
         if (this.ai2) b.ai2 = true;
         burst(b.x, b.y, 'dust', 14);
@@ -3538,6 +3640,7 @@ class AIPlayer {
         if (!canPlace('keep', tx, ty, { ignoreBuildRadius: true })) continue;
         S.units = S.units.filter(x => x !== u);
         const b = addBuilding('keep', tx, ty, this.team);
+        b.teamId = this.teamId;
         b.constructed = true; b.progress = 1;
         if (this.ai2) b.ai2 = true;
         burst(b.x, b.y, 'dust', 20);
@@ -3569,6 +3672,7 @@ class AIPlayer {
       for (let i = 0; i < count; i++) {
         const p = spawnPointFor(keep);
         const u = addUnit(pool[Math.floor(Math.random() * pool.length)], ENEMY, p.x + rnd(-1, 1), p.y + rnd(-.5, .5));
+        u.teamId = this.teamId;
         u.ai2 = true;
         u.order = { type: 'move', x: keep.x + rnd(-2.5, 2.5), y: keep.y + rnd(2, 4) };
       }
@@ -3598,6 +3702,7 @@ class AIPlayer {
         if (!canPlace('keep', tx, ty, { ignoreBuildRadius: true })) continue;
         S.units = S.units.filter(x => x !== u);
         const b = addBuilding('keep', tx, ty, ENEMY);
+        b.teamId = this.teamId;
         b.constructed = true; b.progress = 1; b.ai2 = true;
         burst(b.x, b.y, 'dust', 20);
         return true;
@@ -3621,6 +3726,7 @@ class AIPlayer {
         const type = pool[Math.floor(Math.random() * pool.length)];
         const p = spawnPointFor(base);
         const u = addUnit(type, ALLY, p.x + rnd(-.8, .8), p.y);
+        u.teamId = this.teamId;
         u.order = { type: 'move', x: base.x + rnd(-2.5, 2.5), y: base.y + rnd(1.5, 3.5) };
         floatText(u.x, u.y, '盟军援兵', '#9de0bd');
       }
@@ -5137,6 +5243,7 @@ function playerVisionSources() {
   return out;
 }
 function isVisibleToPlayer(x, y) {
+  if (S.revealAll) return true;   // ?reveal=1 debug hook (automation / spectating)
   if (S.radar) return true;
   for (const s of playerVisionSources()) {
     const r = visionRadiusOf(s);
@@ -5802,7 +5909,7 @@ function renderMinimap() {
   for (const b of S.buildings) {
     if (b.team === ENEMY && !isVisibleToPlayer(b.x, b.y)) continue;
     const p = miniPoint(b.x, b.y);
-    mctx.fillStyle = b.team === PLAYER ? '#e06a51' : b.team === ALLY ? '#69b391' : '#9b94b1';
+    mctx.fillStyle = teamColorOf(b, 'b');
     mctx.fillRect(p.x - 3, p.y - 3, 7, 7);
     mctx.strokeStyle = 'rgba(10,8,6,.6)'; mctx.lineWidth = 1; mctx.strokeRect(p.x - 3, p.y - 3, 7, 7);
   }
@@ -5810,7 +5917,7 @@ function renderMinimap() {
     if (u.garrisoned) continue;
     if (u.team === ENEMY && !isVisibleToPlayer(u.x, u.y)) continue;
     const p = miniPoint(u.x, u.y);
-    mctx.fillStyle = u.team === PLAYER ? '#f0a37f' : u.team === ALLY ? '#9de0bd' : '#c6bfd7';
+    mctx.fillStyle = teamColorOf(u, 'u');
     mctx.beginPath(); mctx.arc(p.x, p.y, 1.7, 0, 7); mctx.fill();
   }
   // camera rect
@@ -6956,6 +7063,23 @@ if (params.get('ally') === '1') {
     if (!hasAlly) S.slots[3] = { owner: 'ai', faction: 'pine', team: pt, ai: null };
   }
 }
+// 调试用：?slots=player,rose,1;ai,raven,2;ai,raven,2;empty,raven, 直接写入名册再开局
+const slotsSpec = params.get('slots');
+if (slotsSpec && S.slots && S.slots.length === 4) {
+  const parts = slotsSpec.split(';').slice(0, 4);
+  parts.forEach((part, i) => {
+    const bits = part.split(',');
+    if (!bits[0]) return;
+    const owner = bits[0] === 'player' || bits[0] === 'ai' ? bits[0] : 'empty';
+    S.slots[i] = {
+      owner,
+      faction: FACTIONS[bits[1]] ? bits[1] : 'raven',
+      team: owner === 'empty' || bits[2] === undefined || bits[2] === '' ? null : clamp(parseInt(bits[2], 10) || 1, 1, 4),
+      ai: null
+    };
+  });
+}
+if (params.get('reveal') === '1') S.revealAll = true;
 syncStartUI();
 if (params.has('autostart')) {
   startGame();

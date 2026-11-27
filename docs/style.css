@@ -595,3 +595,31 @@ body.touch-ui .sel-actions { gap: 6px; flex-wrap: wrap; }
     padding: 12px 18px; color: #f0dcb0; font-size: 13px; z-index: 60; pointer-events: none;
   }
 }
+
+/* ---- 阵营分配槽位表（v1.8.0）---- */
+.cfg-slots-head { margin-top: 2px; }
+.slot-table {
+  display: flex; flex-direction: column; gap: 4px;
+  border: 1px solid rgba(213,179,110,.14); background: rgba(0,0,0,.22); padding: 6px;
+}
+.slot-row {
+  display: grid; grid-template-columns: 42px 1fr 1fr 58px; gap: 5px; align-items: center;
+}
+.slot-row.head { color: #8d7a52; font-size: 9px; letter-spacing: .12em; }
+.slot-row > .slot-no { font-size: 9px; letter-spacing: .1em; color: #9c8659; text-align: center; }
+.slot-row select {
+  width: 100%; padding: 4px 5px; cursor: pointer;
+  border: 1px solid rgba(213,179,110,.18); background: rgba(0,0,0,.42);
+  color: #c8b184; font-family: var(--font-en); font-size: 10px; outline: none;
+}
+.slot-row select:hover { border-color: rgba(213,179,110,.38); }
+.slot-row select:focus { border-color: rgba(240,215,158,.55); }
+.slot-row.is-empty select { opacity: .45; }
+.slot-row.is-player .slot-no { color: #f0d09a; }
+.slot-row.is-ally .slot-no { color: #9de0bd; }
+.slot-row.is-enemy .slot-no { color: #e08a7a; }
+.cfg-slot-hint { color: #8d7a52; font-size: 9px; line-height: 1.5; }
+.cfg-slot-hint.bad { color: #e08573; }
+@media (max-width: 560px) {
+  .slot-row { grid-template-columns: 34px 1fr 1fr 46px; }
+}
