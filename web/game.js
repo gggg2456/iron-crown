@@ -8191,6 +8191,22 @@ if (params.get('dev') === '1') (function initDevConsole() {
   window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
   window.addEventListener('keydown', unlock, { capture: true, passive: true });
 
+  // 控件改绑 pointerdown 后，键盘 Enter/Space 只会产生 click。
+  // 这里把键盘激活翻译成一次合成 pointerdown，保证无鼠标也能操作。
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = document.activeElement;
+    if (!el || !el.matches) return;
+    if (!el.matches('#start-screen button, #start-screen .cfg-toggle, #start-screen .ally-toggle')) return;
+    e.preventDefault();
+    unlock();
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, cancelable: true,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2
+    }));
+  });
+
   const HOVER_SEL = '#start-screen button, #start-screen .cfg-toggle, #start-screen .ally-toggle';
   let actx = null, lastBlip = 0;
   function hoverBlip() {
