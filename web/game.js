@@ -221,7 +221,7 @@ const AI_PACE = { barracksAt: 10, workshopAt: 90, superDelay: 90, trainMul: 1.0 
 const MILITIA = { dmg: 8, hp: 100, range: 1.2, time: 20, max: 3 };
 /* ===== 1. DATA TABLES ===== */
 const DIFFS = {
-  squire: { first: 70, every: 65, base: 2, grow: 1.0, train: 19, max: 14 },
+  squire: { first: 80, every: 65, base: 2, grow: 1.0, train: 19, max: 14 },   // 新手：首波 +10s
   knight: { first: 55, every: 50, base: 3, grow: 1.3, train: 16, max: 18 },
   king:   { first: 45, every: 40, base: 4, grow: 1.6, train: 13, max: 22 }
 };
@@ -925,6 +925,7 @@ const S = {
   allySite: { x: 44, y: 38 },
   allyEnabled: false,
   aiPersonality: 'classic',
+  spyMission: 'gold',
   tour: null
 };
 
@@ -1644,6 +1645,7 @@ function resetWorld() {
   Voice.stopAll();
   S.placing = null; S.drag = null; S.time = 0;
   S.gold = S.run === 'skirmish' && S.skirmish ? S.skirmish.gold : CAMPAIGN_GOLD;
+  if (S.diffKey === 'squire') S.gold = Math.round(S.gold * 1.2);   // 新手：起手资金 +20%
   S.prod = { keep: { cur: null, queue: [] }, barracks: { cur: null, queue: [] }, workshop: { cur: null, queue: [] } };
   S.perf = { path: 0, sep: 0, pathReq: 0, pathDef: 0, pathCool: 0, pushChecks: 0, sepMs: 0, pushMs: 0, frames: 0 };
   S.aiTimes = {}; S.aiTrace = [];
@@ -2269,6 +2271,7 @@ function unitRadius(u) {
 function blockedAt(x, y, u = null) {
   if (terrainAt(x, y) === 'water') return true;
   const r = u ? unitRadius(u) : 0;
+  if (r > 0 && narrowSlitAt(Math.floor(x), Math.floor(y), r)) return true;
   for (const b of S.buildings) {
     if (x > b.tx - .24 - r && x < b.tx + b.w + .24 + r
       && y > b.ty - .24 - r && y < b.ty + b.d + .24 + r) return true;
@@ -2322,10 +2325,25 @@ function nearestFreeSpot(x, y, r, rad) {
       const nx = x + Math.cos(ang) * ring * .9;
       const ny = y + Math.sin(ang) * ring * .9;
       if (nx < .4 || ny < .4 || nx > MAP - .4 || ny > MAP - .4) continue;
-      if (!walkBlocked(Math.floor(nx), Math.floor(ny), radius)) return { x: nx, y: ny };
+      const gx = Math.floor(nx), gy = Math.floor(ny);
+      if (walkBlocked(gx, gy, radius) || narrowSlitAt(gx, gy, radius)) continue;
+      return { x: nx, y: ny };
     }
   }
   return null;
+}
+function buildingBlocksPoint(x, y, r) {
+  for (const b of S.buildings) {
+    if (x > b.tx - .24 - r && x < b.tx + b.w + .24 + r
+      && y > b.ty - .24 - r && y < b.ty + b.d + .24 + r) return true;
+  }
+  return false;
+}
+/* 一格的「夹缝」：左右皆建筑、或上下皆建筑。单位进得去出不来的就是这种格子。 */
+function narrowSlitAt(tx, ty, r) {
+  const B = (x, y) => (x < 0 || y < 0 || x >= MAP || y >= MAP)
+    ? true : buildingBlocksPoint(x + .5, y + .5, r);
+  return (B(tx - 1, ty) && B(tx + 1, ty)) || (B(tx, ty - 1) && B(tx, ty + 1));
 }
 function walkBlocked(tx, ty, r) {
   const x = tx + .5, y = ty + .5;
@@ -2361,6 +2379,19 @@ function findPath(sx, sy, tx, ty, r) {
   const blocked = new Uint8Array(N);
   for (let y = 0; y < W; y++) {
     for (let x = 0; x < W; x++) if (walkBlocked(x, y, r)) blocked[y * W + x] = 1;
+  }
+  // 通路网格后处理：把两侧都被挡住的窄缝也标成不可通行，杜绝「进得去出不来」
+  const baseBlocked = blocked.slice();
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (baseBlocked[i]) continue;
+      const l = x > 0 ? baseBlocked[i - 1] : 1;
+      const rt = x < W - 1 ? baseBlocked[i + 1] : 1;
+      const up = y > 0 ? baseBlocked[i - W] : 1;
+      const dn = y < W - 1 ? baseBlocked[i + W] : 1;
+      if ((l && rt) || (up && dn)) blocked[i] = 1;
+    }
   }
   const svx = clamp(Math.floor(sx), 0, W - 1), svy = clamp(Math.floor(sy), 0, W - 1);
   const s = svy * W + svx;
@@ -3345,6 +3376,31 @@ function spyDetected(b) {
   }
   return false;
 }
+const SPY_MISSIONS = {
+  gold: { label: '偷金币', tip: '潜入敌方金库，偷走金币' },
+  tech: { label: '偷科技', tip: '窃取一项尚未研究的科技（免费获得）' },
+  super: { label: '干扰超武', tip: '让敌方超武冷却延长 45 秒' }
+};
+function spyStealTech() {
+  const pool = Object.keys(TECH).filter(k => !S.tech[k] && (!TECH[k].req || S.tech[TECH[k].req]));
+  if (!pool.length) return null;
+  const key = pool[Math.floor(Math.random() * pool.length)];
+  S.tech[key] = true;
+  if (TECH[key].isSuper) { S.superKey = TECH[key].superKey; S.superCd = 0; updateSuperUI(); }
+  if (key === 'plate') scalePlayerHp(1.2);
+  if (key === 'royal') scalePlayerHp(1.2, u => u.type === 'knight' || u.type === 'hero');
+  return key;
+}
+function spySabotageSuper() {
+  let hit = 0;
+  for (const ai of [S.aiPrimary, S.aiSecond]) {
+    if (!ai) continue;
+    if (!ai.super) ai.super = { key: (FACTIONS[ai.faction] || FACTIONS.raven).super, timer: 90, built: false, retry: 6 };
+    ai.super.timer = (ai.super.timer || 0) + 45;
+    hit++;
+  }
+  return hit;
+}
 function attemptInfiltrate(spy, b) {
   if (!spy || !b || b.team !== ENEMY || b.hp <= 0) return false;
   if (distanceTo(spy, b) > 2) {
@@ -3359,6 +3415,32 @@ function attemptInfiltrate(spy, b) {
     kill(spy);
     updateHud(true);
     return true;
+  }
+  const mission = S.spyMission || 'gold';
+  if (mission === 'tech') {
+    const stolen = spyStealTech();
+    if (stolen) {
+      floatText(b.x, b.y - 1, '窃得 ' + TECH[stolen].name, '#a9d6ff');
+      toast('密探窃得科技 · ' + TECH[stolen].name, '', 'scroll');
+      Sound.play('horn');
+      S.units = S.units.filter(u => u !== spy);
+      S.selected = S.selected.filter(u => u !== spy);
+      updateHud(true); updateSelectionPanel(true); renderCards();
+      return true;
+    }
+    toast('没有可窃取的科技，密探改为搜刮金币', 'warn', 'scroll');
+  } else if (mission === 'super') {
+    const n = spySabotageSuper();
+    if (n) {
+      floatText(b.x, b.y - 1, '超武干扰', '#c9a6ff');
+      toast('密探破坏了敌方超武法阵：冷却 +45 秒', '', 'scroll');
+      Sound.play('hornlow');
+      S.units = S.units.filter(u => u !== spy);
+      S.selected = S.selected.filter(u => u !== spy);
+      updateHud(true); updateSelectionPanel(true);
+      return true;
+    }
+    toast('敌方没有可干扰的超武，密探改为搜刮金币', 'warn', 'scroll');
   }
   const want = spyLootFor(b);
   const chest = Math.max(0, Math.round(S.enemyChest || 0));
@@ -6421,7 +6503,7 @@ function updateSelectionPanel(force = false) {
         <div class="sel-title"><strong>${uname(u)}</strong><span>${def.role} · ${status}</span></div>
       </div>
       <div class="sel-hp"><i style="width:${hp}%"></i><span>${Math.ceil(u.hp)} / ${u.maxHp}</span></div>
-      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.buffT > 0 ? `<div class="sel-extra"><b>伏击</b><span>剩余 ${u.buffT.toFixed(1)} 秒 · 移速 +20% / 伤害 +15%</span></div>` : (u.fatigueT > 0 ? `<div class="sel-extra"><b>疲惫</b><span>剩余 ${u.fatigueT.toFixed(1)} 秒 · 移速 −10%</span></div>` : '')}${u.type === 'spy' ? `<div class="sel-extra"><b>渗透</b><span>走到敌方建筑 2 格内右键潜入偷金币；周围有敌兵/箭塔会被识破</span></div>` : ''}${u.type === 'fanatic' ? `<div class="sel-extra"><b>自爆</b><span>${u.fuseT > 0 ? '引线中 ' + u.fuseT.toFixed(1) + ' 秒' : '按 D 原地引爆 · 进入敌人 1 格自动引爆（引线 0.5 秒可被打断）'}</span></div>` : ''}${u.militiaT > 0 ? `<div class="sel-extra"><b>民兵</b><span>剩余 ${Math.ceil(u.militiaT)} 秒 · 征召期间不采集</span></div>` : ''}${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
+      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.buffT > 0 ? `<div class="sel-extra"><b>伏击</b><span>剩余 ${u.buffT.toFixed(1)} 秒 · 移速 +20% / 伤害 +15%</span></div>` : (u.fatigueT > 0 ? `<div class="sel-extra"><b>疲惫</b><span>剩余 ${u.fatigueT.toFixed(1)} 秒 · 移速 −10%</span></div>` : '')}${u.type === 'spy' ? `<div class="sel-extra"><b>渗透 · ${SPY_MISSIONS[S.spyMission || 'gold'].label}</b><span>走到敌方建筑 2 格内右键潜入；周围有敌兵/箭塔会被识破</span></div><div class="sel-actions">${Object.entries(SPY_MISSIONS).map(([k, m]) => `<button class="sel-act${(S.spyMission || 'gold') === k ? ' active' : ''}" data-unit-action="spy:${k}">${m.label}</button>`).join('')}</div>` : ''}${u.type === 'fanatic' ? `<div class="sel-extra"><b>自爆</b><span>${u.fuseT > 0 ? '引线中 ' + u.fuseT.toFixed(1) + ' 秒' : '按 D 原地引爆 · 进入敌人 1 格自动引爆（引线 0.5 秒可被打断）'}</span></div>` : ''}${u.militiaT > 0 ? `<div class="sel-extra"><b>民兵</b><span>剩余 ${Math.ceil(u.militiaT)} 秒 · 征召期间不采集</span></div>` : ''}${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
       <div class="sel-extra"><b>战功 · ${RANKS[u.rank]}</b><span>${u.kills} 次击杀${u.rank < 3 ? ` · ${Math.ceil(u.xp)}/${u.rank === 1 ? 100 : 260} 经验` : ' · 已达最高军衔'}</span></div>`;
     } else {
       const groups = {};
@@ -6992,7 +7074,12 @@ function bindUI() {
     const unitBtn = e.target.closest('[data-unit-action]');
     if (unitBtn) {
       const act = unitBtn.dataset.unitAction;
-      if (act === 'deploy' && S.selected.length === 1) deployBaseVehicle(S.selected[0]);
+      if (act.startsWith('spy:')) {
+        S.spyMission = act.slice(4);
+        toast('密探任务切换为：' + SPY_MISSIONS[S.spyMission].label + '（' + SPY_MISSIONS[S.spyMission].tip + '）', '', 'scroll');
+        Sound.play('ui');
+      }
+      else if (act === 'deploy' && S.selected.length === 1) deployBaseVehicle(S.selected[0]);
       else if (act === 'militia') tryMilitia();
       else if (act === 'detonate') detonateFanatics();
       else if (act === 'stop') stopSelected();
@@ -7242,7 +7329,11 @@ function onPointerMove(e) {
   if (hit) {
     let txt = '';
     const hasSpy = S.selected.some(u => u.type === 'spy');
-    if (hasSpy && hit.type === 'building' && hit.ref.team === ENEMY) txt = '可潜入：偷金币（+' + Math.min(spyLootFor(hit.ref), Math.round(S.enemyChest || 0)) + '）';
+    if (hasSpy && hit.type === 'building' && hit.ref.team === ENEMY) {
+      const m = S.spyMission || 'gold';
+      txt = '可潜入 · ' + SPY_MISSIONS[m].label
+        + (m === 'gold' ? '（+' + Math.min(spyLootFor(hit.ref), Math.round(S.enemyChest || 0)) + '）' : '');
+    }
     else if (hit.type === 'unit') txt = `${uname(hit.ref)} · ${Math.ceil(hit.ref.hp)} HP`;
     else if (hit.type === 'building') txt = `${bname(hit.ref)} · ${Math.ceil(hit.ref.hp)} HP`;
     else txt = `金矿 · 剩余 ${Math.ceil(hit.ref.amount)}`;
@@ -7588,7 +7679,9 @@ window.IronCrown = {
   damageBridge: (i, amount) => { const b = (S.bridges || [])[i]; if (b) damageBridge(b, amount, null); },
   walkBlocked: (tx, ty, r) => walkBlocked(tx, ty, r === undefined ? .34 : r),
   terrainAt: (x, y) => terrainAt(x, y),
-  requestSupport: () => requestSupport()
+  requestSupport: () => requestSupport(),
+  infiltrate: (spy, b) => attemptInfiltrate(spy, b),
+  narrowSlit: (x, y, r) => narrowSlitAt(x, y, r === undefined ? .34 : r)
 };
 
 const params = new URLSearchParams(location.search);
