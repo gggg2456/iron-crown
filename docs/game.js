@@ -1946,6 +1946,7 @@ function resetWorld() {
   S.tour = null; S.keys = {}; S.hover = null;
   S.uid = 1;
   S.crates = []; S.crateTimer = 22 + rnd(0, 8);
+  S.props = S.props.filter(p => p.kind !== 'rubble');
 
   // Both sides start bare: one mobile base vehicle, no pre-built structures or army.
   const eb = S.enemySite;
@@ -2382,6 +2383,16 @@ function flashCard(type) {
 function floatText(wx, wy, text, color) {
   const p = mapPos(wx, wy);
   S.floats.push({ x: p.x, y: p.y - 24, text, color: color || '#e8cc90', life: 1.25 });
+}
+function expireRubble() {
+  if (!S.props || !S.props.length) return;
+  let changed = false;
+  for (let i = S.props.length - 1; i >= 0; i--) {
+    const p = S.props[i];
+    if (p.kind !== 'rubble' || !p.life) continue;
+    if (S.time - (p.born || 0) > p.life + .6) { S.props.splice(i, 1); changed = true; }
+  }
+  if (changed) paintMap();
 }
 function updateParticles(dt) {
   for (const p of S.particles) {
@@ -3371,7 +3382,9 @@ function kill(target) {
     }
     burst(target.x, target.y, 'rubble', 22);
     burst(target.x, target.y, 'fire', 12);
-    S.props.push({ kind: 'rubble', type: 'rubble', x: target.x, y: target.y, size: 1, w: target.w, d: target.d });
+    S.props.push({ kind: 'rubble', type: 'rubble', x: target.x, y: target.y, size: 1,
+      w: target.w, d: target.d, born: S.time, bornAt: performance.now(), life: 4.6,
+      seed: (target.id || 7) * 13.7 });
     Sound.play('boom');
     if (target.team === ENEMY) floatText(target.x, target.y, '建筑被摧毁', '#e1b654');
     if (target.type === 'keep') {
@@ -3444,6 +3457,35 @@ function updateProjectiles(dt) {
 function updateBuildings(dt) {
   for (const b of S.buildings) {
     b.flash = Math.max(0, b.flash - dt);
+    // 受损起火：<60% 冒黑烟，<30% 浓烟 + 明火
+    if (b.constructed !== false && b.hp > 0) {
+      const st = damageStageOf(b);
+      if (st >= 1) {
+        b.smokeT = (b.smokeT || 0) - dt;
+        if (b.smokeT <= 0) {
+          const heavy = st >= 2;
+          b.smokeT = heavy ? .16 : .42;
+          const half = (b.w || 2) * .5;
+          const def = B[b.type];
+          particle(b.x + rnd(-half, half), b.y + rnd(-.2, .2), {
+            vx: rnd(-3, 3), vy: rnd(-4, 0),
+            z: def.h * rnd(.66, 1), vz: rnd(7, 15), g: -2,
+            life: heavy ? rnd(1.2, 2.0) : rnd(.9, 1.5),
+            size: heavy ? rnd(5, 9) : rnd(3.5, 6.5),
+            color: heavy ? 'rgba(46,42,38,.44)' : 'rgba(74,70,64,.32)',
+            type: 'smoke', grow: heavy ? 16 : 11
+          });
+          if (heavy && Math.random() < .72) {
+            particle(b.x + rnd(-half, half), b.y + rnd(-.2, .2), {
+              vx: rnd(-5, 5), vy: rnd(-3, 1),
+              z: def.h * rnd(.4, .9), vz: rnd(9, 18), g: -6,
+              life: rnd(.28, .62), size: rnd(2.4, 4.8),
+              color: Math.random() < .5 ? '#f2a03c' : '#e8c25a', type: 'fire'
+            });
+          }
+        }
+      }
+    }
     if (b.constructed === false) {
       const total = BUILD_TIME[b.type] || 4;
       b.progress = Math.min(1, (b.progress || 0) + dt / total);
@@ -4751,6 +4793,7 @@ function update(dt) {
   S.enemyChest = Math.min(900, (S.enemyChest === undefined ? 600 : S.enemyChest) + dt * 1.2);
   if (!S.faithT || S.time >= S.faithT) { S.faithT = (S.time || 0) + .5; faithRefresh(); }
   updateTerrain(dt);
+  expireRubble();
   if (S.corpses && S.corpses.length) S.corpses = S.corpses.filter(c => S.time - c.t0 < .9);
   if (!S.aiTraceT || S.time >= S.aiTraceT) {
     S.aiTraceT = (S.time || 0) + 10;
@@ -5264,9 +5307,48 @@ function drawConstruction(b, now) {
   ctx.fillStyle = '#4a7a3a'; ctx.fillRect(-bw / 2, by, bw * p, 3);
   ctx.fillStyle = 'rgba(190,230,170,.55)'; ctx.fillRect(-bw / 2, by, bw * p, 1);
 }
+/* 受击阶段：0 完好 / 1 受损(<60%) / 2 重创(<30%) / 3 已毁 */
+function damageStageOf(b) {
+  if (!b || b.hp <= 0) return 3;
+  const r = b.maxHp ? b.hp / b.maxHp : 1;
+  if (r < .3) return 2;
+  if (r <= .6) return 1;
+  return 0;
+}
+/* 建筑的粗略剪影：底座矩形 + 屋顶三角，用来叠加变暗/高光而不污染地面 */
+function buildingSilhouette(b) {
+  const def = B[b.type];
+  const hw = (def.w + def.d) * HW * .5;
+  const h = def.h;
+  ctx.beginPath();
+  ctx.moveTo(-hw * .82, 0);
+  ctx.lineTo(0, hw * .42);
+  ctx.lineTo(hw * .82, 0);
+  ctx.lineTo(hw * .82, -h * .82);
+  ctx.lineTo(0, -h);
+  ctx.lineTo(-hw * .82, -h * .82);
+  ctx.closePath();
+}
 function drawBuilding(b, now, ghost = false) {
   const p = mapPos(b.x, b.y);
-  ctx.save(); ctx.translate(p.x, p.y);
+  const stage = ghost ? 0 : damageStageOf(b);
+  // 受击抖动：1-2px，按 flash 衰减
+  let jx = 0, jy = 0;
+  if (!ghost && b.flash > 0) {
+    const k = b.flash / .14;
+    jx = (Math.random() * 2 - 1) * 2 * k;
+    jy = (Math.random() * 2 - 1) * 1.4 * k;
+  }
+  // 重创时偶发「嘎吱」微缩
+  let creak = 1;
+  if (!ghost && stage >= 2 && Math.sin(now * 1.6 + (b.phase || 0)) > .93) creak = .98;
+  ctx.save();
+  ctx.translate(p.x + jx, p.y + jy);
+  if (creak !== 1) {
+    ctx.translate(0, -B[b.type].h * .35);
+    ctx.scale(creak, creak);
+    ctx.translate(0, B[b.type].h * .35);
+  }
   if (ghost) ctx.globalAlpha = .5;
   if (!ghost && b.constructed === false) {
     drawConstruction(b, now);
@@ -5291,6 +5373,44 @@ function drawBuilding(b, now, ghost = false) {
   else if (b.type === 'stormSpire') drawStormSpire(b, now);
   else if (b.type === 'plagueWell') drawPlagueWell(b, now);
   else if (b.type === 'drumTower') drawDrumTower(b, now);
+
+  // ---- 阶段化受击叠加 ----
+  if (!ghost) {
+    if (stage >= 1) {
+      // 变暗 / 焦黑：multiply 叠一层，只填建筑剪影
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = stage >= 2 ? 'rgba(96,88,80,.95)' : 'rgba(140,132,120,.8)';
+      buildingSilhouette(b);
+      ctx.fill();
+      ctx.restore();
+      // 焦痕：越往后越多
+      ctx.save();
+      ctx.globalAlpha = stage >= 2 ? .5 : .26;
+      ctx.fillStyle = '#14100d';
+      const hw = (B[b.type].w + B[b.type].d) * HW * .5;
+      const n = stage >= 2 ? 5 : 2;
+      for (let i = 0; i < n; i++) {
+        const a = (i * 2.4 + (b.phase || 0));
+        ctx.beginPath();
+        ctx.ellipse(Math.cos(a) * hw * .3, -B[b.type].h * (.2 + (i % 3) * .2),
+          hw * .22, B[b.type].h * .1, a * .4, 0, 7);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    if (b.flash > 0) {
+      // 受击高光：白→红，瞬间闪一下
+      const k = clamp(b.flash / .14, 0, 1);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = .55 * k;
+      ctx.fillStyle = b.team === PLAYER ? '#ffd9c6' : '#ffb3a0';
+      buildingSilhouette(b);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
   ctx.restore();
 
   // health bar in world coords
@@ -5633,11 +5753,52 @@ function drawProp(pr, now) {
     ctx.fillStyle = '#b0a58d'; ctx.fillRect(-9, -42, 18, 6);
     ctx.fillStyle = '#6e6758'; ctx.fillRect(-9, -3, 18, 5);
   } else if (pr.type === 'rubble') {
-    shadow(ctx, 42, 18, .2);
-    for (let i = 0; i < 8; i++) {
-      ctx.fillStyle = i % 2 ? '#6e6657' : '#887f6b';
-      ctx.fillRect(-25 + (i * 7) % 50, -3 - (i % 3) * 4, 10, 6);
+    const age = pr.bornAt ? (performance.now() - pr.bornAt) / 1000 : (S.time - (pr.born || 0));
+    const fade = pr.life ? clamp(1 - (age - pr.life * .7) / (pr.life * .3), 0, 1) : 1;
+    const seed = pr.seed || 7;
+    const hw = ((pr.w || 2) + (pr.d || 2)) * HW * .5;
+    ctx.globalAlpha = fade;
+    shadow(ctx, hw * 1.15, hw * .45, .22);
+    // 碎石块：多边形组合
+    for (let i = 0; i < 9; i++) {
+      const a = (seed + i * 2.31) % 6.283;
+      const rr = hw * (.18 + ((i * 37) % 100) / 100 * .62);
+      const cx = Math.cos(a) * rr, cy = Math.sin(a) * rr * .5;
+      const s2 = 4 + ((i * 17) % 7);
+      ctx.fillStyle = i % 3 === 0 ? '#4d4740' : i % 3 === 1 ? '#6b6459' : '#847c6d';
+      ctx.beginPath();
+      ctx.moveTo(cx - s2, cy);
+      ctx.lineTo(cx - s2 * .3, cy - s2 * .8);
+      ctx.lineTo(cx + s2 * .9, cy - s2 * .4);
+      ctx.lineTo(cx + s2 * .5, cy + s2 * .5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(24,20,16,.4)'; ctx.lineWidth = .8; ctx.stroke();
     }
+    // 断梁
+    ctx.strokeStyle = '#3f3327'; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-hw * .56, -2); ctx.lineTo(hw * .12, -11 - Math.sin(seed) * 3);
+    ctx.moveTo(-hw * .2, -4); ctx.lineTo(hw * .58, -4 - Math.cos(seed) * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(122,104,80,.5)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-hw * .56, -3.4); ctx.lineTo(hw * .12, -12.4 - Math.sin(seed) * 3);
+    ctx.stroke();
+    // 残余青烟
+    if (age < (pr.life || 4.6)) {
+      const smokeA = clamp(1 - age / (pr.life || 4.6), 0, 1);
+      for (let i = 0; i < 3; i++) {
+        const t = (S.time * .5 + i * .37) % 1;
+        ctx.globalAlpha = fade * smokeA * (1 - t) * .5;
+        ctx.fillStyle = 'rgba(120,124,116,1)';
+        ctx.beginPath();
+        ctx.ellipse(Math.sin(seed + i * 2 + S.time * .8) * hw * .28,
+          -6 - t * 26, 4 + t * 9, 3 + t * 7, 0, 0, 7);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 }
@@ -6276,6 +6437,16 @@ function render(now) {
 
   const list = [];
   for (const tr of S.trees) list.push({ sort: tr.y, draw: () => drawTree(tr, t), x: tr.x, y: tr.y });
+  if (S.props.some(p => p.kind === 'rubble' && p.bornAt)) {
+    const nowMs = performance.now();
+    let removed = false;
+    S.props = S.props.filter(p => {
+      if (p.kind !== 'rubble' || !p.bornAt) return true;
+      if (nowMs - p.bornAt > p.life * 1000 + 600) { removed = true; return false; }
+      return true;
+    });
+    if (removed) paintMap();
+  }
   for (const pr of S.props) list.push({ sort: pr.y, draw: () => drawProp(pr, t), x: pr.x, y: pr.y });
   for (const g of S.goldNodes) list.push({ sort: g.y, draw: () => drawGold(g, t), x: g.x, y: g.y });
   for (const c of S.crates) list.push({ sort: c.y, draw: () => drawCrate(c, t), x: c.x, y: c.y });
@@ -7993,6 +8164,8 @@ window.IronCrown = {
   }),
   tutSkip: () => tutSkip(),
   superBuilding: () => (S.superKey && SUPERS[S.superKey]) ? SUPERS[S.superKey].building : null,
+  damageStage: (b) => damageStageOf(b),
+  rubbleCount: () => (S.props || []).filter(p => p.kind === 'rubble').length,
   tutEmit: (n, d) => tutEmit(n, d),
   orderMove: (u, x, y) => orderMove(u, x, y),
   selectUnits: (list) => { S.selected = list.slice(); updateSelectionPanel(true); },
