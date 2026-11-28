@@ -9,6 +9,24 @@
 
 ---
 
+## v2.2.1 新手教程实测修复
+
+用**真实鼠标/键盘事件**完整跑一遍教程后发现并修掉四个问题（此前门禁调用内部函数，掩盖了它们）：
+
+| 问题 | 根因 | 修复 |
+| --- | --- | --- |
+| 超武图标真机点不动 | `#super-hud` 继承 `#ui` 的 `pointer-events:none`，且被 `#selection-panel` 覆盖（`elementFromPoint` 命中选中面板）；只有 JS `.click()` 能触发 | `.super-hud{pointer-events:auto; z-index:45; left:50%; bottom:84px}`，绑定改 `pointerdown`（`#mini-hud` 同步处理） |
+| 右键金矿不采矿 | 右键走 `attackMoveAt`，该分支没有 gold 处理；教程文案却要求右键金矿 | `attackMoveAt` 增加 gold 分支：农民 `assignGather`、其他单位靠近 |
+| 教程第 3/4 步永久卡死 | v2.1.8 取消二次施工后，`updateBuildings` 的完工分支不再触发 → `buildDone` 事件永不发送 | `placeBuilding` 落地时补发 `tutEmit('buildDone')` |
+| 第 3 步文案指错页签 | 圣泉属于【工事】页，不是【建造】页 | 文案改为「建造页造农舍、工事页造圣泉」 |
+
+### 真实输入验收（7/7 通过）
+
+框选(拖拽) → 右键移动 → 框选+右键金矿(农民开始往返) → 点卡片造农舍/圣泉(排队→就绪→点图落地) → 造兵营+训练 2 长矛兵 → `F` 全选 + `Q` 攻击移动清掉 2 只侦察队 → 点超武 HUD 进入瞄准并释放 → `F` + 右键推平哨站 → **结算胜利**。
+
+- 全程无控制台报错；`seen` 事件链完整：`moveOrder → gather → buildDone → unitTrained → kill → superCast`
+- 回归：经典 300 秒基线零漂移；独立教学、第一章引导、超武/狂信徒门禁全过
+
 ## v2.2.0 新手引导并入主线第一章
 
 ### 两种教程计划

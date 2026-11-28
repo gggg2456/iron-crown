@@ -922,3 +922,41 @@ body[data-faction="raven"] { --faction: 62,48,78;   --faction-bright: #d9c6f2; }
   18%  { opacity: 1; transform: translate(-50%, -6px) scale(1.06); }
   100% { opacity: 0; transform: translate(-50%, -34px) scale(1); }
 }
+
+/* ===== v2.2.1 超武 HUD 可点击 =====
+   它继承了 #ui 的 pointer-events:none，又被右侧选中面板压住，
+   真机上既看不见也点不到（只有 JS 的 .click() 能触发）。 */
+.super-hud {
+  pointer-events: auto;
+  z-index: 45;
+  right: auto;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  box-shadow: 0 6px 22px rgba(0,0,0,.55);
+}
+.super-hud:hover {
+  transform: translateX(-50%) translateY(-1px);
+}
+.super-hud.ready {
+  animation: superReadyPulse 2.4s ease-in-out infinite;
+}
+@keyframes superReadyPulse {
+  0%, 100% { box-shadow: 0 6px 22px rgba(0,0,0,.55), 0 0 0 rgba(240,209,138,0); }
+  50%      { box-shadow: 0 6px 22px rgba(0,0,0,.55), 0 0 18px rgba(240,209,138,.45); }
+}
+/* 战鼓（迷你技能）挪到右侧，避免和超武重叠 */
+#mini-hud {
+  pointer-events: auto;
+  z-index: 45;
+  right: auto;
+  left: calc(50% + 170px);
+  bottom: 84px;
+  transform: none;
+}
+@media (max-width: 760px), (pointer: coarse) {
+  /* 触屏：落到指令栏上方，横向更窄 */
+  .super-hud { bottom: calc(46vh + 14px); left: 8px; transform: none; max-width: calc(100vw - 16px); }
+  .super-hud:hover { transform: translateY(-1px); }
+  #mini-hud { bottom: calc(46vh + 14px); left: 8px; right: auto; }
+}

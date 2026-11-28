@@ -1335,8 +1335,8 @@ const TUT_STEPS = [
   },
   {
     id: 'build',
-    text: '点【建造】造一座农舍，再加一座圣泉。',
-    tip: '农舍 +6 人口，圣泉 +4 民心；没民心箭塔会哑火',
+    text: '【建造】页造农舍，【工事】页造圣泉。',
+    tip: '农舍 +6 人口（建造页），圣泉 +4 民心（工事页）；没民心箭塔会哑火',
     need: ['buildDone'],
     check: () => playerHasBuilding('house') && playerHasBuilding('fountain')
   },
@@ -4118,6 +4118,8 @@ function placeBuilding() {
   b.constructed = true;
   b.progress = 1;
   b.rise = performance.now();
+  // 落地即完工，施工完成事件不会再来，这里补发一次（教程第 3/4 步依赖它）
+  tutEmit('buildDone', { type });
   burst(b.x, b.y, 'dust', 20);
   burst(b.x, b.y, 'gold', 6);
   Sound.play('buildPlace');
@@ -7436,6 +7438,7 @@ function commandAt(sx, sy) {
   const w = screenToWorld(sx, sy);
   if (hit && (hit.type === 'unit' || hit.type === 'building') && hit.ref.team === ENEMY) {
     for (const u of S.selected) orderAttack(u, hit.ref);
+    tutEmit('moveOrder', { units: S.selected.length, attack: true });
     floatText(hit.ref.x, hit.ref.y, '进攻', '#e3b27a');
     Voice.play('attack', S.selected[0]);
     Sound.play('ui');
@@ -7472,6 +7475,18 @@ function attackMoveAt(sx, sy) {
   if (S.placing) { cancelPlacement(); return; }
   if (!S.selected.length) { clearSelection(); return; }
   const hit = pickAt(sx, sy);
+  // 右键点金矿 = 指派农民采矿（教程与 RTS 习惯都要求这个手感）
+  if (hit && hit.type === 'gold') {
+    let any = false;
+    for (const u of S.selected) {
+      if (u.type === 'peasant') { assignGather(u, hit.ref); any = true; }
+      else orderMove(u, hit.ref.x + rnd(-1.2, 1.2), hit.ref.y + 1.7);
+    }
+    if (any) { tutEmit('gather', {}); toast('农民开始采金', '', 'coin'); }
+    Voice.play('move', S.selected[0]);
+    Sound.play('ui');
+    return;
+  }
   const spies = S.selected.filter(u => u.type === 'spy' && u.hp > 0 && !u.garrisoned);
   if (spies.length && hit && hit.type === 'building' && hit.ref.team === ENEMY) {
     if (attemptInfiltrate(spies[0], hit.ref)) return;
@@ -7496,6 +7511,7 @@ function attackMoveAt(sx, sy) {
     };
     u.target = null; u.gather = null;
   });
+  tutEmit('moveOrder', { units: n, attackMove: true });
   floatText(w.x, w.y, '攻击移动', '#e3b27a');
   Voice.play('move', S.selected[0]);
   Sound.play('ui');
@@ -7726,11 +7742,12 @@ function bindUI() {
   const shakeBox = $('#opt-shake');
   if (shakeBox) shakeBox.addEventListener('change', e => { S.shakeOn = e.target.checked; });
   $('#btn-resume').addEventListener('click', togglePause);
-  if (els.superBtn) els.superBtn.addEventListener('click', armSuper);
+  if (els.superBtn) els.superBtn.addEventListener('pointerdown', e => { e.preventDefault(); armSuper(); });
   const superHud = $('#super-hud');
-  if (superHud) superHud.addEventListener('click', armSuper);
+  // pointerdown 而不是 click：真实鼠标的 click 会被上层输入处理吞掉（JS 的 .click() 却能过）
+  if (superHud) superHud.addEventListener('pointerdown', e => { e.preventDefault(); armSuper(); });
   const miniHud = $('#mini-hud');
-  if (miniHud) miniHud.addEventListener('click', armMini);
+  if (miniHud) miniHud.addEventListener('pointerdown', e => { e.preventDefault(); armMini(); });
   setInterval(updateSuperUI, 250);
   updateSuperUI();
   $('#btn-pause').innerHTML = icon('pause');
