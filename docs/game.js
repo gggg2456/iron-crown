@@ -1248,6 +1248,74 @@ function updateCampaignUI() {
    - 每步都有 45 秒强制通过 + 手动「跳过此步」，绝不卡关；
    - check() 读的是当前世界状态（已建成/已训练/已击杀），
      所以玩家中途用上帝面板刷资源、提前造好建筑也不会崩，进入步骤时立刻判过。 */
+/* 战役第一章专用引导：从「基地车」开始，最后并入战役自己的胜利结算 */
+const TUT_STEPS_CH1 = [
+  {
+    id: 'deploy',
+    text: '选中基地车，点「部署为基地」展开主堡。',
+    tip: '没有主堡就造不了东西：先把它开出来',
+    need: ['buildDone'],
+    check: () => playerHasBuilding('keep')
+  },
+  {
+    id: 'peasants',
+    text: '主堡出兵种页训练 2 名农民。',
+    tip: '农民是唯一的收入来源，也是所有建筑的工人',
+    need: ['unitTrained'],
+    check: () => tutPeasantCount() >= 2
+  },
+  {
+    id: 'gather',
+    text: '选中农民，右键点一下金矿，他会自动往返采矿。',
+    tip: '打仗需要钱：一个农民一分钟约 150 金',
+    need: ['gather'],
+    check: () => !!S.tutSeen.gather
+      || S.units.some(u => u.team === PLAYER && u.type === 'peasant' && u.order && u.order.type === 'gather')
+  },
+  {
+    id: 'house',
+    text: '点【建造】造一座农舍，提高人口上限。',
+    tip: '农舍 +6 人口，人口满了就造不了兵',
+    need: ['buildDone'],
+    check: () => playerHasBuilding('house')
+  },
+  {
+    id: 'army',
+    text: '造一座兵营，训练 2 名长矛兵守家。',
+    tip: '长矛兵克制骑兵，是前期主力',
+    need: ['unitTrained'],
+    check: () => playerHasBuilding('barracks') && tutArmy().length >= 2,
+    assist: () => { if (S.gold < 300) S.gold = 300; }
+  },
+  {
+    id: 'defend',
+    text: '黑鸦的侦察队来了，消灭他们。',
+    tip: '选中部队按 Q 攻击移动，右键点敌人也行',
+    need: ['kill'],
+    check: () => (S.tutKills || 0) >= 2,
+    assist: tutSpawnProbes
+  },
+  {
+    id: 'push',
+    text: '推平黑鸦主堡，拿下第一章。',
+    tip: '全军压上，把他们的基地拆掉',
+    need: ['kill'],
+    // 战役开局敌人只有基地车：必须等它建起主堡再拆掉，否则这一步会瞬间误判通过
+    check: () => !enemyHasBase() || (S.mode === 'ended' && S.lastWin === true)
+  }
+];
+function tutPeasantCount() {
+  return S.units.filter(u => u.team === PLAYER && u.type === 'peasant' && u.hp > 0).length
+    + (S.prod.keep.cur && S.prod.keep.cur.type === 'peasant' ? 1 : 0)
+    + S.prod.keep.queue.filter(i => i.type === 'peasant').length;
+}
+function tutSteps() {
+  return S.tutPlan === 'campaign' ? TUT_STEPS_CH1 : TUT_STEPS;
+}
+/* 独立教学局才会关掉 AI；战役第一章的引导不改变对局规则 */
+function tutStandalone() {
+  return !!S.tutorial && S.tutPlan !== 'campaign';
+}
 const TUT_STEP_SECONDS = 45;
 const TUT_STEPS = [
   {
@@ -1384,6 +1452,7 @@ function tutArmy() {
     && u.type !== 'peasant' && u.type !== 'baseVehicle');
 }
 function tutReset() {
+  if (!S.tutPlan) S.tutPlan = S.run === 'campaign' ? 'campaign' : 'skirmish';
   S.tutStep = 0;
   S.tutT = 0;
   S.tutSeen = {};
@@ -1411,9 +1480,10 @@ function tutStepDone(st) {
 }
 function tutEvaluate() {
   if (!S.tutorial || S.mode !== 'playing') return;
+  const STEPS = tutSteps();
   let guard = 0;
   while (guard++ < 16) {
-    const st = TUT_STEPS[S.tutStep];
+    const st = STEPS[S.tutStep];
     if (!st) { tutFinish(); return; }
     if (!tutStepDone(st)) return;
     tutAdvance('done');
@@ -1421,13 +1491,14 @@ function tutEvaluate() {
 }
 function tutAdvance(reason) {
   if (!S.tutorial) return;
-  const st = TUT_STEPS[S.tutStep];
+  const STEPS = tutSteps();
+  const st = STEPS[S.tutStep];
   if (reason === 'skip') toast('已跳过这一步', '', 'scroll');
   else if (reason === 'timeout') toast('这一步停留太久，自动进入下一步', 'warn', 'scroll');
   S.tutStep++;
   S.tutT = 0;
   renderTutorial();
-  const next = TUT_STEPS[S.tutStep];
+  const next = STEPS[S.tutStep];
   if (!next) { tutFinish(); return; }
   if (next.assist) { try { next.assist(); } catch (_) {} }
   toast(`教学 · ${next.text}`, '', 'scroll');
@@ -1440,17 +1511,31 @@ function tutSkip() {
 }
 function tutFinish() {
   if (!S.tutorial || S.mode !== 'playing') return;
-  toast('教学完成！你已经掌握采集、建造、出兵与进攻。', '', 'crest');
-  Sound.play('horn');
   S.tutorial = false;
   renderTutorial();
+  if (S.tutPlan === 'campaign') {
+    // 战役引导不自带结算：交给章节自己的胜负逻辑
+    try { localStorage.setItem('ic.ch1guide', '1'); } catch (_) {}
+    toast('引导结束！接下来就按自己的节奏打吧。', '', 'crest');
+    Sound.play('horn');
+    return;
+  }
+  toast('教学完成！你已经掌握采集、建造、出兵与进攻。', '', 'crest');
+  Sound.play('horn');
   endGame(true);
+}
+function tutDismissGuide() {
+  if (!S.tutorial) return;
+  S.tutorial = false;
+  try { localStorage.setItem('ic.ch1guide', '1'); } catch (_) {}
+  renderTutorial();
+  toast('已关闭新手引导（可在开局菜单重新打开「教学」）', '', 'scroll');
 }
 function tutorialTick(dt) {
   if (!S.tutorial) return;
   if (S.mode !== 'playing') return;
   S.tutT = (S.tutT || 0) + dt;
-  const st = TUT_STEPS[S.tutStep];
+  const st = tutSteps()[S.tutStep];
   const limit = (st && st.timeout) || TUT_STEP_SECONDS;
   if (S.tutT >= limit) tutAdvance('timeout');
   renderTutorial();
@@ -1460,17 +1545,20 @@ function renderTutorial() {
   if (!el) return;
   el.hidden = !S.tutorial;
   if (!S.tutorial) return;
-  const total = TUT_STEPS.length;
-  const st = TUT_STEPS[S.tutStep];
+  const STEPS = tutSteps();
+  const total = STEPS.length;
+  const st = STEPS[S.tutStep];
   const limit = (st && st.timeout) || TUT_STEP_SECONDS;
   const left = Math.max(0, Math.ceil(limit - (S.tutT || 0)));
-  const rows = TUT_STEPS.map((x, i) =>
+  const rows = STEPS.map((x, i) =>
     `<div class="tut-step ${i < S.tutStep ? 'done' : i === S.tutStep ? 'now' : ''}"><span>${i < S.tutStep ? '✔' : i + 1}</span>${x.text}</div>`).join('');
   el.innerHTML = `<b>新手教学 <i class="tut-count">${Math.min(S.tutStep + 1, total)}/${total}</i></b>`
     + rows
     + (st ? `<div class="tut-tip">${st.tip || ''}</div>` : '')
     + `<div class="tut-foot"><span class="tut-timer">${left}s 后自动跳过</span>`
-    + `<button id="tut-skip" type="button" class="tut-skip">跳过此步</button></div>`;
+    + `<button id="tut-skip" type="button" class="tut-skip">跳过此步</button>`
+    + (S.tutPlan === 'campaign' ? `<button id="tut-dismiss" type="button" class="tut-skip tut-dismiss">关闭引导</button>` : '')
+    + `</div>`;
 }
 function fmtTime(s) {
   s = Math.max(0, Math.ceil(s));
@@ -4189,7 +4277,7 @@ function launchWaveSmart() {
   S.wave.timer = Math.max(18, Math.round((diff.every + (L.everyAdd || 0)) * prof.waveEvery - S.wave.n * 1.5));
 }
 function launchWave() {
-  if (S.tutorial) return;
+  if (tutStandalone()) return;
   if (S.mode !== 'playing') return;
   if (S.aiPersonality === 'smart') return launchWaveSmart();
   const diff = DIFFS[S.diffKey];
@@ -4269,7 +4357,7 @@ class AIPlayer {
   }
   /* ---- tick ------------------------------------------------------------- */
   update(dt) {
-    if (S.tutorial || !this.enabled) return;
+    if (tutStandalone() || !this.enabled) return;
     if (this.kind === 'second') return this.updateSecond(dt);
     if (this.kind === 'ally') return this.updateAlly(dt);
     return this.updatePrimary(dt);
@@ -4440,7 +4528,7 @@ class AIPlayer {
   }
   /* ---- offence ---------------------------------------------------------- */
   assault() {
-    if (S.tutorial) return;
+    if (tutStandalone()) return;
     const diff = DIFFS[S.diffKey];
     const target = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0)
       || S.units.find(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned);
@@ -4457,7 +4545,7 @@ class AIPlayer {
   }
   /* ---- super weapon ----------------------------------------------------- */
   updateSuper(dt) {
-    if (S.tutorial) return;
+    if (tutStandalone()) return;
     if (!S.supersEnabled) return;
     if (!this.super) return;
     const sup = SUPERS[this.super.key];
@@ -4801,7 +4889,7 @@ function enemySuperTarget() {
   return S.units.find(u => u.team === PLAYER && u.hp > 0) || null;
 }
 function updateAI(dt) {
-  if (S.tutorial) return;
+  if (tutStandalone()) return;
   for (const slot of (S.teams || [])) {
     if (slot && slot.ai) slot.ai.update(dt);
   }
@@ -5682,7 +5770,7 @@ function aiCrateTick(dt) {
   if (S.aiCrateT > 0) return;
   S.aiCrateT = 1;
   S.crateStats.scans++;
-  if (S.tutorial || S.run !== 'skirmish') return;
+  if (tutStandalone() || S.run !== 'skirmish') return;
   if (!S.crates.length) return;
   // 已经有人在捡就不要再派人
   if (S.units.some(u => u.team === ENEMY && u.crateRun && S.crates.includes(u.crateRun))) return;
@@ -7552,6 +7640,7 @@ function bindUI() {
   $$('#mode-tabs .mode-tab').forEach(btn => btn.addEventListener('pointerdown', () => {
     const mode = btn.dataset.mode;
     S.tutorial = mode === 'tutorial';
+    S.tutPlan = S.tutorial ? 'skirmish' : null;
     S.run = (mode === 'skirmish' || mode === 'tutorial') ? 'skirmish' : 'campaign';
     if (S.tutorial) S.skirmish = { gold: 1200, inf: 0, supers: false, faction: 'rose', map: 'border' };
     else if (S.run === 'skirmish' && !S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true, faction: 'rose', map: 'random' };
@@ -7601,7 +7690,8 @@ function bindUI() {
     Sound.play('ui');
   });
   document.getElementById('tutorial-panel')?.addEventListener('pointerdown', e => {
-    if (e.target && e.target.id === 'tut-skip') { e.preventDefault(); tutSkip(); }
+    if (e.target && e.target.id === 'tut-skip') { e.preventDefault(); tutSkip(); return; }
+    if (e.target && e.target.id === 'tut-dismiss') { e.preventDefault(); tutDismissGuide(); }
   });
   $$('#command-tabs .tab').forEach(tab => tab.addEventListener('click', () => {
     S.tab = tab.dataset.tab; renderTabs(); renderCards(); hideTooltip(); Sound.play('ui');
@@ -8067,6 +8157,7 @@ function startGame() {
   const modeTab = $$('#mode-tabs .mode-tab').find(b => b.classList.contains('active'));
   const modeSel = modeTab ? modeTab.dataset.mode : 'campaign';
   S.tutorial = modeSel === 'tutorial';
+  S.tutPlan = S.tutorial ? 'skirmish' : null;
   S.tutStep = 0;
   S.run = (modeSel === 'skirmish' || modeSel === 'tutorial') ? 'skirmish' : 'campaign';
   if (S.run === 'skirmish' && !S.tutorial) {
@@ -8093,7 +8184,7 @@ function startGame() {
       map: mb ? mb.dataset.map : 'random'
     };
   } else S.skirmish = null;
-  if (S.tutorial) S.skirmish = { gold: 600, inf: 0, supers: false, faction: 'rose', map: 'border' };
+  if (S.tutorial) S.skirmish = { gold: 1200, inf: 0, supers: false, faction: 'rose', map: 'border' };
   updateCampaignUI();
   resetWorld();
   if (S.tutorial) { tutReset(); renderTutorial(); }
@@ -8107,6 +8198,18 @@ function startGame() {
   const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0);
   const focus = keep || S.units.find(u => u.team === PLAYER && u.type === 'baseVehicle' && u.hp > 0);
   if (focus) centerCamera(focus.x, focus.y, 1.04, true);
+  // 战役第一章：第一次进入时自动挂上新手引导（完成后记在本地，不再打扰）
+  if (S.run === 'campaign' && S.campaignLevel === 0) {
+    let seen = false;
+    try { seen = localStorage.getItem('ic.ch1guide') === '1'; } catch (_) {}
+    if (!seen) {
+      S.tutorial = true;
+      S.tutPlan = 'campaign';
+      tutReset();
+      renderTutorial();
+      toast('新手引导已开启：跟着左上角的任务走，随时可「关闭引导」', '', 'scroll');
+    }
+  }
   if (S.run === 'campaign') showStoryBriefing();
   else playIntroToasts();
   if (window.__dbgUpdate) window.__dbgUpdate();
@@ -8206,8 +8309,8 @@ window.IronCrown = {
   deployBase: (u) => deployBaseVehicle(u),
   soundState: () => (Sound.ac ? Sound.ac.state : 'none'),
   tutorial: () => ({
-    active: !!S.tutorial, step: S.tutStep, total: TUT_STEPS.length,
-    id: (TUT_STEPS[S.tutStep] || {}).id || null,
+    active: !!S.tutorial, step: S.tutStep, total: tutSteps().length, plan: S.tutPlan || null,
+    id: (tutSteps()[S.tutStep] || {}).id || null,
     elapsed: Math.round((S.tutT || 0) * 10) / 10,
     seen: Object.keys(S.tutSeen || {}), kills: S.tutKills || 0
   }),
@@ -8264,8 +8367,9 @@ if (params.get('mode') === 'skirmish') {
 }
 if (params.get('mode') === 'tutorial' || params.get('tutorial') === '1') {
   S.tutorial = true;
+  S.tutPlan = 'skirmish';
   S.run = 'skirmish';
-  S.skirmish = { gold: 600, inf: 0, supers: false, faction: 'rose', map: 'border' };
+  S.skirmish = { gold: 1200, inf: 0, supers: false, faction: 'rose', map: 'border' };
 }
 if (params.get('debug') === '1') {
   window.__ic = S;
