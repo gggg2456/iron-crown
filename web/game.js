@@ -420,7 +420,7 @@ const U = {
     name: '狂信徒', enemyName: '黑鸦狂信徒', hp: 50, speed: 2.2, dmg: 0, range: 1,
     cd: 1, aggro: 6, pop: 1, cost: 40, time: 8, h: 24, producer: 'barracks', icon: 'shield',
     factionOnly: 'raven',
-    role: '自爆单位', desc: '抱着火药桶冲向敌群，进入 1 格后 0.5 秒引爆：对单位 60、对建筑 30（减半）。引线期间被击杀则不会爆炸；选中按 K 可原地引爆。'
+    role: '自爆单位', desc: '抱着火药桶冲向敌群，进入 1 格后 0.5 秒引爆：对单位 60、对建筑 30（减半）。引线期间被击杀则不会爆炸；只有下达攻击移动（Q/右键敌人）时才会主动索敌自爆。'
   },
   spy: {
     name: '密探', enemyName: '黑鸦密探', hp: 60, speed: 2.0, dmg: 0, range: 1,
@@ -3100,24 +3100,29 @@ function updateUnit(u, dt) {
         kill(u);
         return;
       }
-    } else if (u.manualFuse) {
-      u.fuseT = .5; u.manualFuse = false;
     } else {
-      let nd = Infinity, nx = 0, ny = 0;
-      for (const e of S.units) {
-        if (e.hp <= 0 || e.garrisoned || isFriendlyTeam(e.team, u.team)) continue;
-        const d = Math.hypot(e.x - u.x, e.y - u.y);
-        if (d < nd) { nd = d; nx = e.x; ny = e.y; }
-      }
-      for (const b of S.buildings) {
-        if (b.hp <= 0 || isFriendlyTeam(b.team, u.team)) continue;
-        const d = distanceTo(u, b);
-        if (d < nd) { nd = d; nx = b.x; ny = b.y; }
-      }
-      if (nd <= 1) {
-        u.fuseT = .5;
-        Sound.play('ui');
-        floatText(u.x, u.y - .8, '引线！', '#ff6a4a');
+      // 只有「攻击移动 / 攻击」指令才索敌；普通移动与闲置绝不会路过就炸
+      const hunting = !!u.order && (u.order.type === 'attackMove' || u.order.type === 'attack');
+      if (!hunting) {
+        if (u.target) u.target = null;
+      } else {
+        let nd = Infinity, nearest = null;
+        for (const e of S.units) {
+          if (e.hp <= 0 || e.garrisoned || isFriendlyTeam(e.team, u.team)) continue;
+          const d = Math.hypot(e.x - u.x, e.y - u.y);
+          if (d < nd) { nd = d; nearest = e; }
+        }
+        for (const b of S.buildings) {
+          if (b.hp <= 0 || b.dead || isFriendlyTeam(b.team, u.team)) continue;
+          const d = distanceTo(u, b);
+          if (d < nd) { nd = d; nearest = b; }
+        }
+        if (nearest && !u.target) u.target = nearest;
+        if (nd <= 1) {
+          u.fuseT = .5;
+          Sound.play('ui');
+          floatText(u.x, u.y - .8, '引线！', '#ff6a4a');
+        }
       }
     }
   }
@@ -3498,6 +3503,7 @@ function updateBuildings(dt) {
           floatText(b.x, b.y, '建造完成', '#f0d18a');
           toast(`${bname(b)}建造完成`, '', 'castle');
           Sound.play('buildPlace');
+          armSuperForBuilding(b.type);
           superHintOnce(b.type);
           flashCard(b.type);
           burst(b.x, b.y, 'gold', 10);
@@ -3788,13 +3794,6 @@ function attemptInfiltrate(spy, b) {
   S.selected = S.selected.filter(u => u !== spy);
   updateHud(true); updateSelectionPanel(true);
   return true;
-}
-function detonateFanatics() {
-  const list = S.selected.filter(u => u.type === 'fanatic' && u.hp > 0 && !u.garrisoned);
-  if (!list.length) { toast('先选中狂信徒再按 K 原地引爆', 'warn', 'fire'); Sound.play('ui'); return; }
-  for (const u of list) { if (!(u.fuseT > 0)) u.manualFuse = true; }
-  toast(list.length + ' 名狂信徒点燃引线，0.5 秒后引爆', 'warn', 'fire');
-  Sound.play('hornlow');
 }
 function tryMilitia() {
   if (S.mode !== 'playing' || S.paused) return;
@@ -4894,6 +4893,7 @@ function update(dt) {
     renderQueue();
     updateCards();
     updateSelectionPanel();
+    updateSuperUI();          // 超武冷却数字/进度条要持续跳动
   }
   if (S.hover && S.hover.type !== 'unit') S.hover = null;
 }
@@ -6864,6 +6864,17 @@ function updateSuperUI() {
   if (btn) btn.hidden = true;
   updateMiniUI();
   const hud = $('#super-hud');
+  // 自愈：只要有本阵营超武建筑，就补装备一次（覆盖旧存档、AI/开发钩子等所有建造路径）
+  if (!S.superKey && S.supersEnabled) {
+    const mine = factionOf().super;
+    const need = mine && SUPERS[mine] && SUPERS[mine].building;
+    if (need && S.buildings.some(b => b.team === PLAYER && b.type === need && b.hp > 0 && b.constructed !== false)) {
+      S.superKey = mine;
+      S.superCd = S.superCd || 0;
+      const techKey = 'super_' + mine;
+      if (TECH[techKey]) S.tech[techKey] = true;
+    }
+  }
   const sup = selectedSuper();
   const show = !!sup && S.supersEnabled;
   if (!hud) return;
@@ -7019,7 +7030,7 @@ function updateSelectionPanel(force = false) {
         <div class="sel-title"><strong>${uname(u)}</strong><span>${def.role} · ${status}</span></div>
       </div>
       <div class="sel-hp"><i style="width:${hp}%"></i><span>${Math.ceil(u.hp)} / ${u.maxHp}</span></div>
-      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.buffT > 0 ? `<div class="sel-extra"><b>伏击</b><span>剩余 ${u.buffT.toFixed(1)} 秒 · 移速 +20% / 伤害 +15%</span></div>` : (u.fatigueT > 0 ? `<div class="sel-extra"><b>疲惫</b><span>剩余 ${u.fatigueT.toFixed(1)} 秒 · 移速 −10%</span></div>` : '')}${u.type === 'spy' ? `<div class="sel-extra"><b>渗透 · ${SPY_MISSIONS[S.spyMission || 'gold'].label}</b><span>走到敌方建筑 2 格内右键潜入；周围有敌兵/箭塔会被识破</span></div><div class="sel-actions">${Object.entries(SPY_MISSIONS).map(([k, m]) => `<button class="sel-act${(S.spyMission || 'gold') === k ? ' active' : ''}" data-unit-action="spy:${k}">${m.label}</button>`).join('')}</div>` : ''}${u.type === 'fanatic' ? `<div class="sel-extra"><b>自爆</b><span>${u.fuseT > 0 ? '引线中 ' + u.fuseT.toFixed(1) + ' 秒' : '按 K 原地引爆 · 进入敌人 1 格自动引爆（引线 0.5 秒可被打断）'}</span></div>` : ''}${u.militiaT > 0 ? `<div class="sel-extra"><b>民兵</b><span>剩余 ${Math.ceil(u.militiaT)} 秒 · 征召期间不采集</span></div>` : ''}${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
+      <div class="sel-meta"><em>攻击 ${def.dmg}</em><em>射程 ${def.range}</em><em>速度 ${def.speed}</em>${u.type === 'peasant' ? `<em>${u.carrying ? '携带 ' + u.carrying + ' 金币' : '采集中'}</em>` : ''}</div>${u.buffT > 0 ? `<div class="sel-extra"><b>伏击</b><span>剩余 ${u.buffT.toFixed(1)} 秒 · 移速 +20% / 伤害 +15%</span></div>` : (u.fatigueT > 0 ? `<div class="sel-extra"><b>疲惫</b><span>剩余 ${u.fatigueT.toFixed(1)} 秒 · 移速 −10%</span></div>` : '')}${u.type === 'spy' ? `<div class="sel-extra"><b>渗透 · ${SPY_MISSIONS[S.spyMission || 'gold'].label}</b><span>走到敌方建筑 2 格内右键潜入；周围有敌兵/箭塔会被识破</span></div><div class="sel-actions">${Object.entries(SPY_MISSIONS).map(([k, m]) => `<button class="sel-act${(S.spyMission || 'gold') === k ? ' active' : ''}" data-unit-action="spy:${k}">${m.label}</button>`).join('')}</div>` : ''}${u.type === 'fanatic' ? `<div class="sel-extra"><b>自爆</b><span>${u.fuseT > 0 ? '引线中 ' + u.fuseT.toFixed(1) + ' 秒' : '下达攻击移动（Q）后靠近敌人 1 格自动引爆 · 普通移动不炸'}</span></div>` : ''}${u.militiaT > 0 ? `<div class="sel-extra"><b>民兵</b><span>剩余 ${Math.ceil(u.militiaT)} 秒 · 征召期间不采集</span></div>` : ''}${u.type === 'hero' ? `<div class="sel-extra"><b>裂地斩</b><span>${u.cleaveCd > 0 ? `冷却 ${u.cleaveCd.toFixed(1)}s` : '就绪'} · 脱战 5 秒后自愈</span></div>` : ''}${u.type === 'baseVehicle' ? `<div class="sel-extra"><b>移动基地</b><span>开到 3×3 的空地，点击下方按钮展开为主堡</span></div><div class="sel-actions"><button class="sel-act" data-unit-action="deploy">部署为基地</button></div>` : ''}
       <div class="sel-extra"><b>战功 · ${RANKS[u.rank]}</b><span>${u.kills} 次击杀${u.rank < 3 ? ` · ${Math.ceil(u.xp)}/${u.rank === 1 ? 100 : 260} 经验` : ' · 已达最高军衔'}</span></div>`;
     } else {
       const groups = {};
@@ -7606,7 +7617,6 @@ function bindUI() {
       }
       else if (act === 'deploy' && S.selected.length === 1) deployBaseVehicle(S.selected[0]);
       else if (act === 'militia') tryMilitia();
-      else if (act === 'detonate') detonateFanatics();
       else if (act === 'stop') stopSelected();
       updateSelectionPanel(true);
       return;
@@ -7970,14 +7980,6 @@ function onKeyDown(e) {
     S.forceAim = !S.forceAim;
     canvas.style.cursor = S.forceAim ? 'crosshair' : 'default';
     toast(S.forceAim ? '强制攻击：左键选择任意单位或建筑（包括友军），右键取消' : '已取消强制攻击', '', 'sword');
-    return;
-  }
-  if (k === 'k') {
-    // 引爆键：吞掉事件，绝不冒泡到镜头平移/其它全局快捷键
-    e.preventDefault();
-    e.stopPropagation();
-    delete S.keys.k;
-    detonateFanatics();
     return;
   }
   if (k === 'v') { tryMilitia(); return; }
@@ -9341,7 +9343,6 @@ if (fanaticTest && S.mode === 'playing') {
     f.order = { type: 'move', x: ax, y: ay };
     if (fanaticTest === 'building') f.order = { type: 'move', x: ek.x, y: ek.y };
     if (fanaticTest === 'fuse') { f.fuseT = .5; f.hp = 0; kill(f); }
-    if (fanaticTest === 'manual') { S.selected = [f]; detonateFanatics(); }
   }
   if (window.__dbgUpdate) window.__dbgUpdate();
 }
