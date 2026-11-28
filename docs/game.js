@@ -1092,6 +1092,7 @@ function faithOf(team) {
     prod += d.faithProd || 0;
     cost += d.faithCost || 0;
   }
+  if (team === PLAYER && S.devFaithBonus) prod += S.devFaithBonus;   // dev: +民心
   const ratio = cost > 0 ? Math.min(1, prod / Math.max(cost, 1)) : 1;
   return { prod, cost, ratio, gap: Math.max(0, cost - prod) };
 }
@@ -2934,6 +2935,7 @@ function gainXp(u, amount) {
 }
 function damage(target, amount, source) {
   if (!target || target.hp <= 0 || target.garrisoned) return;
+  if (S.devGod && (target.team === PLAYER || target.team === ALLY)) return;   // dev: god mode
   // 灰烬：站在焦土上的攻击者伤害 +10%
   if (source && source.kind === 'unit' && source.hp > 0 && terrainAt(source.x, source.y) === 'ash') amount *= 1.1;
   target.hp -= amount;
@@ -3290,7 +3292,7 @@ function updateTraining(dt) {
   for (const cat of ['keep', 'barracks', 'workshop']) {
     const line = S.prod[cat];
     if (!line || !line.cur) continue;
-    line.cur.elapsed += dt * trainingSpeedFor(cat);
+    line.cur.elapsed += dt * trainingSpeedFor(cat) * (S.devInstant ? 60 : 1);
     if (line.cur.elapsed < line.cur.total) continue;
     const t = line.cur;
     line.cur = null;
@@ -3490,7 +3492,7 @@ function cancelTrain(type) {
 function updateConstruction(dt) {
   const q = S.buildQ;
   if (!q || !q.cur || q.cur.ready) return;
-  q.cur.elapsed += dt;
+  q.cur.elapsed += dt * (S.devInstant ? 60 : 1);
   if (q.cur.elapsed < q.cur.total) return;
   q.cur.elapsed = q.cur.total;
   q.cur.ready = true;
@@ -7505,7 +7507,7 @@ let miniLast = 0;
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000);
   last = now;
-  if ((S.mode === 'playing' || S.mode === 'spectating') && !S.paused) update(dt);
+  if ((S.mode === 'playing' || S.mode === 'spectating') && !S.paused) update(dt * (S.devSpeed || 1));
   else {
     updateParticles(dt);
     updateCamera(dt);
@@ -7758,6 +7760,103 @@ syncStartUI();
 if (params.has('autostart')) {
   startGame();
 }
+/* ===== Dev console (?dev=1 only) =====
+   没有 ?dev=1 时这段整块不执行：不建 DOM、不绑按键、不设任何状态。 */
+if (params.get('dev') === '1') (function initDevConsole() {
+  const wrap = document.createElement('div');
+  wrap.id = 'dev-console';
+  wrap.style.cssText = [
+    'position:fixed', 'right:12px', 'top:64px', 'z-index:99999', 'display:none',
+    'width:236px', 'padding:10px 12px', 'border:1px solid rgba(120,220,170,.45)',
+    'border-radius:6px', 'background:rgba(8,14,10,.86)', 'color:#cfead9',
+    'font:11px/1.55 Consolas,monospace', 'box-shadow:0 8px 30px rgba(0,0,0,.55)',
+    'user-select:none', 'backdrop-filter:blur(3px)'
+  ].join(';');
+  wrap.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+    + '<b style="letter-spacing:.1em;color:#8fe6b8">DEV CONSOLE</b>'
+    + '<span style="opacity:.5">` 关闭</span></div>';
+
+  const row = () => { const d = document.createElement('div'); d.style.cssText = 'display:flex;gap:6px;margin:4px 0'; wrap.appendChild(d); return d; };
+  const btn = (host, label, fn) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'flex:1;cursor:pointer;padding:4px 6px;border:1px solid rgba(120,220,170,.4);'
+      + 'background:rgba(20,40,28,.8);color:#bfe9d2;font:11px Consolas,monospace;border-radius:4px';
+    b.addEventListener('click', ev => { ev.preventDefault(); fn(); });
+    host.appendChild(b);
+    return b;
+  };
+  const toggle = (label, onChange) => {
+    const host = row();
+    host.style.alignItems = 'center'; host.style.justifyContent = 'space-between';
+    const span = document.createElement('span'); span.textContent = label;
+    const box = document.createElement('input'); box.type = 'checkbox';
+    box.style.cssText = 'cursor:pointer;accent-color:#57c98a';
+    box.addEventListener('change', () => onChange(box.checked));
+    host.appendChild(span); host.appendChild(box);
+    return box;
+  };
+
+  const r1 = row();
+  btn(r1, '+10000 金币', () => { S.gold += 10000; updateHud(true); });
+  btn(r1, '+50 民心', () => { S.devFaithBonus = (S.devFaithBonus || 0) + 50; faithRefresh(); updateHud(true); });
+
+  toggle('瞬间完成（建造/训练）', v => { S.devInstant = v; });
+  toggle('无敌模式', v => { S.devGod = v; });
+  const fogBox = toggle('关闭战争迷雾', v => { S.revealAll = v; });
+  fogBox.checked = !!S.revealAll;
+
+  const r3 = row();
+  r3.style.alignItems = 'center'; r3.style.justifyContent = 'space-between';
+  const lab = document.createElement('span'); lab.textContent = '时间流速';
+  const sel = document.createElement('select');
+  sel.style.cssText = 'background:rgba(20,40,28,.9);color:#bfe9d2;border:1px solid rgba(120,220,170,.4);padding:2px 4px;border-radius:4px';
+  for (const v of [1, 2, 5]) { const o = document.createElement('option'); o.value = v; o.textContent = v + 'x'; sel.appendChild(o); }
+  sel.addEventListener('change', () => { S.devSpeed = parseFloat(sel.value) || 1; });
+  r3.appendChild(lab); r3.appendChild(sel);
+
+  const r4 = row();
+  btn(r4, '秒杀全图（清屏）', () => {
+    for (const u of [...S.units]) if (u.team === 'enemy') kill(u);
+    for (const b of [...S.buildings]) if (b.team === 'enemy') kill(b);
+    updateHud(true);
+  });
+
+  const r5 = row();
+  const typeIn = document.createElement('input');
+  typeIn.type = 'text';
+  typeIn.value = 'knight';
+  typeIn.placeholder = '单位类型';
+  typeIn.style.cssText = 'flex:1;min-width:0;background:rgba(20,40,28,.9);color:#bfe9d2;'
+    + 'border:1px solid rgba(120,220,170,.4);padding:3px 5px;border-radius:4px;font:11px Consolas,monospace';
+  // typing in the panel must not reach the game's hotkeys
+  typeIn.addEventListener('keydown', e => e.stopPropagation());
+  const spawnBtn = btn(r5, '鼠标处刷兵', () => {
+    const type = typeIn.value.trim();
+    if (!U[type]) { toast('未知单位：' + type, 'warn', 'sword'); return; }
+    const w = S.mouse.inside ? screenToWorld(S.mouse.x, S.mouse.y) : viewCenterWorld();
+    const u = addUnit(type, PLAYER, clamp(w.x, 1, MAP - 2), clamp(w.y, 1, MAP - 2));
+    if (S.selected.length < 8) S.selected.push(u);
+    updateHud(true);
+  });
+  r5.insertBefore(typeIn, spawnBtn);
+
+  const hint = document.createElement('div');
+  hint.style.cssText = 'margin-top:6px;opacity:.45;font-size:10px';
+  hint.textContent = '~ / ` 唤出 · 仅 ?dev=1 生效';
+  wrap.appendChild(hint);
+
+  document.body.appendChild(wrap);
+
+  let open = false;
+  const show = v => { open = v; wrap.style.display = v ? 'block' : 'none'; };
+  window.addEventListener('keydown', e => {
+    if (e.code !== 'Backquote' && e.key !== '`' && e.key !== '~') return;
+    e.preventDefault();
+    show(!open);
+  }, true);
+  window.__devConsole = { show, isOpen: () => open };
+})();
 // 调试用：?build=house:3 直接排入建筑队列，?move=x,y 让全部我方单位前往该点。
 const buildSpec = params.get('build');
 if (buildSpec && S.mode === 'playing') {

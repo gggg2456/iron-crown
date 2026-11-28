@@ -9,6 +9,29 @@
 
 ---
 
+## v2.0.2 开发者调试面板 + 构建环境修复
+
+### Dev Console（仅 `?dev=1`）
+
+地址加 `?dev=1`，游戏内按**反引号**（`` ` `` 或 `~`）唤出/隐藏右上角半透明面板：
+
+| 控件 | 作用 |
+| --- | --- |
+| `+10000 金币` | `S.gold += 10000` 并刷新 HUD |
+| `+50 民心` | 增加 `S.devFaithBonus`，`faithOf(PLAYER)` 计入产出 |
+| 瞬间完成 | `S.devInstant`：建造/训练进度 ×60 |
+| 无敌模式 | `S.devGod`：`damage()` 对玩家/盟友直接返回 |
+| 关闭战争迷雾 | `S.revealAll` |
+| 时间流速 1x/2x/5x | `S.devSpeed`，主循环 `update(dt * devSpeed)` |
+| 秒杀全图 | 遍历敌方单位/建筑走真实 `kill()` |
+| 刷兵 | 输入单位类型，在鼠标世界坐标 `addUnit(type, PLAYER, …)` |
+
+**隔离**：整块代码包在 `if (params.get('dev') === '1')` 的 IIFE 里——不带参数时不建 DOM、不绑按键、不设任何状态；面板内输入框还会 `stopPropagation`，避免把热键输入带进游戏。
+
+### 构建环境
+
+`node_modules/electron` 的运行时二进制此前被 pnpm 重装清空，已执行 `node node_modules/electron/install.js` 补回（electron 45.3.4），electron-packager 恢复可用。
+
 ## v2.0.1 可炸桥梁（仅沼泽图）
 
 - 沼泽图中央水塘横跨一条 **8 格木桥**（`TERRAIN_BRIDGES.marsh`），桥面 `terrain = 'bridge'`

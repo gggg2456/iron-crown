@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v2.0.1：沼泽图可炸桥梁（桥面可通行，超武/投石车可炸断，断后变回水面）",
-  "releaseName": "可炸桥梁：沼泽图的咽喉要道",
-  "releaseBody": "## 铁与王冠 v2.0.1 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 可炸桥梁（仅沼泽图）\n\n- 中央水塘上架起一条 **8 格木桥**，桥面可正常通行，桥两侧的水面仍然阻断寻路\n- 桥有 **620 点结构值**，超武直击与投石车溅射都会伤到它\n- 桥被炸断后原地变回水面，站在桥上的单位会被推到最近的落脚点，通路彻底中断\n\n### 同时修复\n\n- **AI 编制限幅**：黑鸦（骚扰性格）在共享兵池里保底保留 6 个编成空间，不再被正面部队摊薄；1v2 实测 75 秒内能对玩家经济造成破坏\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "v2.0.2：开发者上帝面板（?dev=1，反引号唤出）+ 修复本地 electron 运行时缺失",
+  "releaseName": "修复打包环境，加入开发者调试面板",
+  "releaseBody": "## 铁与王冠 v2.0.2 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 开发者调试面板（仅 `?dev=1`）\n\n在地址后加 `?dev=1`，游戏内按 **反引号（`` ` `` 或 `~`）** 唤出/隐藏半透明悬浮面板：\n\n- 一键 **+10000 金币**、**+50 民心**\n- 开关：**瞬间完成**（建造/训练）、**无敌模式**、**关闭战争迷雾**\n- **时间流速** 1x / 2x / 5x\n- 按钮：**秒杀全图**（清屏）\n- 输入框 + 按钮：在**鼠标位置直接刷兵**\n\n不带 `?dev=1` 时完全不加载：不建 DOM、不绑按键、不设任何状态。\n\n### 构建环境修复\n\n补回 `node_modules/electron` 运行时（electron 45.3.4），electron-packager 已恢复可用，本轮发布包即由它正常打出。\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
