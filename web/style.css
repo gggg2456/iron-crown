@@ -873,3 +873,19 @@ body[data-faction="raven"] { --faction: 62,48,78;   --faction-bright: #d9c6f2; }
 }
 .tut-skip:hover { color: #ffe6b2; border-color: rgba(244,223,166,.8); }
 .tut-skip:active { transform: translateY(1px); }
+
+
+/* ===== 教程面板：层级与移动端布局（v2.1.6）=====
+   桌面端抬到小地图之上；触屏端改为顶部通栏，避免被小地图 / 底栏盖住。 */
+.tutorial-panel { z-index: 46; pointer-events: auto; }   /* #ui 是 pointer-events:none，必须显式打开 */
+.tut-skip { pointer-events: auto; }
+@media (max-width: 760px), (pointer: coarse) {
+  body.touch-ui .tutorial-panel {
+    left: 8px; right: 8px; width: auto; top: 62px;
+    max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    font-size: 12px; z-index: 48;
+  }
+  body.touch-ui .tutorial-panel .tut-step { padding: 4px 0; }
+  body.touch-ui .tut-skip { min-height: 34px; padding: 6px 14px; font-size: 12px; }
+  body.touch-ui .tut-foot { gap: 10px; }
+}

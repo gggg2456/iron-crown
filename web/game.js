@@ -1253,39 +1253,132 @@ const TUT_STEPS = [
   {
     id: 'move',
     text: '框选我们的战士，右键点地面让他们列阵。',
-    tip: '左键拖出选框，右键点地面 = 移动',
+    tip: '左键拖框选中，右键点地面 = 移动',
     need: ['moveOrder'],
     check: () => !!S.tutSeen.moveOrder && tutArmy().length > 0
   },
   {
     id: 'gather',
     text: '选中农民，右键点一下金矿，他会自动往返采矿。',
-    tip: '打仗需要钱，农民是唯一的收入来源',
+    tip: '打仗需要钱：农民是唯一的稳定收入',
     need: ['gather'],
-    check: () => !!S.tutSeen.gather || S.units.some(u => u.team === PLAYER && u.type === 'peasant' && u.order && u.order.type === 'gather')
+    check: () => !!S.tutSeen.gather
+      || S.units.some(u => u.team === PLAYER && u.type === 'peasant' && u.order && u.order.type === 'gather')
   },
   {
-    id: 'house',
-    text: '点【建造】造个农舍，加人口上限。',
-    tip: '人口满了就造不了兵，农舍 +6',
+    id: 'build',
+    text: '点【建造】造一座农舍，再加一座圣泉。',
+    tip: '农舍 +6 人口，圣泉 +4 民心；没民心箭塔会哑火',
     need: ['buildDone'],
-    check: () => playerHasBuilding('house')
+    check: () => playerHasBuilding('house') && playerHasBuilding('fountain')
   },
   {
     id: 'army',
     text: '造一座兵营，再训练 2 名长矛兵。',
     tip: '长矛兵克制骑兵，是前期主力',
     need: ['unitTrained'],
-    check: () => playerHasBuilding('barracks') && tutArmy().length >= 2
+    check: () => playerHasBuilding('barracks') && tutArmy().length >= 2,
+    assist: () => {
+      // 人口/资源不够时给一点启动资金，避免「差 5 块钱」卡住
+      if (S.gold < 400) S.gold = 400;
+    }
   },
   {
     id: 'fight',
-    text: '消灭来试探的敌人，检验你的部队。',
-    tip: '选中部队按 Q 攻击移动，右键也能直接下令',
+    text: '敌人来试探了！选中部队按 Q 攻击移动，消灭他们。',
+    tip: 'Q = 攻击移动；右键点敌人也能直接下令',
     need: ['kill'],
-    check: () => (S.tutKills || 0) >= 1
+    check: () => (S.tutKills || 0) >= 2,
+    assist: tutSpawnProbes
+  },
+  {
+    id: 'hero',
+    text: '选中英雄看看技能，然后放一次超级武器。',
+    tip: '点【科技】建祭坛 → 选天火 → 等冷却好点右下角图标',
+    need: ['superCast'],
+    check: () => !!S.tutSeen.superCast,
+    assist: tutPrepHeroAndSuper
+  },
+  {
+    id: 'victory',
+    text: '推平那座黑鸦哨站，迎接最后的胜利！',
+    tip: '全军压上，摧毁它就通关',
+    need: ['kill'],
+    check: () => tutOutpostDown(),
+    assist: tutSpawnOutpost
   }
 ];
+/* ---- 每一幕的舞台布置 ---- */
+function tutNearBase(dx, dy) {
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  const cx = keep ? keep.x : 9.65, cy = keep ? keep.y : 36.35;
+  return { x: cx + dx, y: cy + dy };
+}
+function tutSpawnProbes() {
+  // 两只残血敌军主动送上门，确保新手能打赢
+  const spot = tutNearBase(6.5, 2.5);
+  for (let i = 0; i < 2; i++) {
+    const u = addUnit(i ? 'swordsman' : 'spearman', ENEMY,
+      clamp(spot.x + i * 1.6, 1, MAP - 2), clamp(spot.y + i * 1.1, 1, MAP - 2));
+    u.hp = 34; u.maxHp = u.maxHp;
+    u.tutProbe = true;
+    const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+    if (keep) u.order = { type: 'attackMove', x: keep.x, y: keep.y };
+  }
+  toast('两名残血敌军正在逼近，消灭他们！', 'warn', 'sword');
+}
+function tutPrepHeroAndSuper() {
+  // 保证有英雄可看、有超武可放：缺什么补什么（不消耗玩家资源）
+  const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
+  if (!keep) return;
+  if (!S.units.some(u => u.team === PLAYER && u.type === 'hero' && u.hp > 0)) {
+    addUnit('hero', PLAYER, keep.x + 2.2, keep.y + 2.6);
+  }
+  if (!S.supersEnabled) S.supersEnabled = true;
+  if (!S.superKey) {
+    S.superKey = (FACTIONS[S.faction] || FACTIONS.rose).super;
+  }
+  // 直接把超武建筑放到主堡旁（教程里不逼玩家再攒 300 金）
+  const sup = SUPERS[S.superKey];
+  if (sup && !playerHasBuilding(sup.building)) {
+    for (let r = 3; r <= 8; r++) {
+      let placed = false;
+      for (let a = 0; a < 16; a++) {
+        const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 3);
+        const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 3);
+        if (!canPlace(sup.building, tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+        const b = addBuilding(sup.building, tx, ty, PLAYER);
+        b.constructed = true; b.progress = 1;
+        placed = true; break;
+      }
+      if (placed) break;
+    }
+  }
+  S.superCd = 0;
+  updateSuperUI();
+  toast('英雄与超武已就绪：选中英雄看技能，点右下角图标释放', 'warn', 'hero');
+}
+function tutSpawnOutpost() {
+  const spot = tutNearBase(12, -4);
+  for (let r = 0; r < 8; r++) {
+    for (let a = 0; a < 12; a++) {
+      const tx = clamp(Math.round(spot.x + Math.cos(a * Math.PI / 6) * r), 0, MAP - 2);
+      const ty = clamp(Math.round(spot.y + Math.sin(a * Math.PI / 6) * r), 0, MAP - 2);
+      if (!canPlace('tower', tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+      const b = addBuilding('tower', tx, ty, ENEMY);
+      b.constructed = true; b.progress = 1;
+      b.hp = 260; b.maxHp = 260;
+      b.tutOutpost = true;
+      S.tutOutpostId = b.id;
+      toast('黑鸦哨站已现身，推平它！', 'warn', 'castle');
+      return;
+    }
+  }
+}
+function tutOutpostDown() {
+  if (!S.tutOutpostId) return false;
+  return !S.buildings.some(b => b.id === S.tutOutpostId && b.hp > 0 && !b.dead);
+}
 function tutArmy() {
   return S.units.filter(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned
     && u.type !== 'peasant' && u.type !== 'baseVehicle');
@@ -1685,12 +1778,7 @@ function spawnSkirmishStart() {
       const a = (i / starter.length) * Math.PI * 2;
       addUnit(type, PLAYER, cx + Math.cos(a) * 2.6, cy + 2.6 + Math.sin(a) * 2.0);
     });
-    const bs = findKeepSpot(cx + 4, cy + 3);
-    if (bs) {
-      clearKeepArea(bs.tx, bs.ty);
-      const bk = addBuilding('barracks', bs.tx, bs.ty, PLAYER);
-      bk.constructed = true; bk.progress = 1;
-    }
+    // 教程不预置兵营：第 4 步要求玩家自己造一座
   }
   if (!S.buildings.some(b => b.type === 'keep')) {
     setTimeout(() => toast('开局落位失败，已退化为基地车开局：请先展开基地。', 'warn', 'workshop'), 1200);
@@ -3274,6 +3362,7 @@ function kill(target) {
   } else {
     if (target.team === PLAYER && S.smartStats) S.smartStats.playerBuildingsLost++;
     S.buildings = S.buildings.filter(b => b !== target);
+    tutEmit('killSettled', { kind: target.kind, type: target.type });
     if (S.selectedBuilding === target) S.selectedBuilding = null;
     if (S.inspect === target) S.inspect = null;
     for (const u of S.units.filter(x => x.garrisoned === target.id)) {
@@ -7235,7 +7324,7 @@ function bindUI() {
     const mode = btn.dataset.mode;
     S.tutorial = mode === 'tutorial';
     S.run = (mode === 'skirmish' || mode === 'tutorial') ? 'skirmish' : 'campaign';
-    if (S.tutorial) S.skirmish = { gold: 600, inf: 0, supers: false, faction: 'rose', map: 'border' };
+    if (S.tutorial) S.skirmish = { gold: 1200, inf: 0, supers: false, faction: 'rose', map: 'border' };
     else if (S.run === 'skirmish' && !S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true, faction: 'rose', map: 'random' };
     else if (S.run === 'campaign') S.skirmish = null;
     syncStartUI();
@@ -7903,6 +7992,7 @@ window.IronCrown = {
     seen: Object.keys(S.tutSeen || {}), kills: S.tutKills || 0
   }),
   tutSkip: () => tutSkip(),
+  superBuilding: () => (S.superKey && SUPERS[S.superKey]) ? SUPERS[S.superKey].building : null,
   tutEmit: (n, d) => tutEmit(n, d),
   orderMove: (u, x, y) => orderMove(u, x, y),
   selectUnits: (list) => { S.selected = list.slice(); updateSelectionPanel(true); },

@@ -854,3 +854,38 @@ body[data-faction="raven"] { --faction: 62,48,78;   --faction-bright: #d9c6f2; }
   0%, 100% { opacity: .26; transform: translate(-50%, -50%); }
   50%      { opacity: .58; transform: translate(-50%, -50%); }
 }
+
+
+/* ===== 教程面板（v2.1.6）：进度、计时、跳过 ===== */
+.tutorial-panel b { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tut-count { font-family: var(--font-en); font-size: 10px; letter-spacing: .1em; color: #8d7443; font-style: normal; }
+.tut-tip {
+  margin: 7px 0 2px; padding-top: 7px; border-top: 1px solid rgba(213,179,110,.14);
+  font-size: 10px; line-height: 1.6; color: #a48c60;
+}
+.tut-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+.tut-timer { font-size: 9px; letter-spacing: .06em; color: #6f5c3f; }
+.tut-skip {
+  cursor: pointer; padding: 4px 10px; font-size: 10px; letter-spacing: .08em;
+  color: #d8c090; background: linear-gradient(180deg, rgba(52,44,32,.95), rgba(22,18,13,.98));
+  border: 1px solid rgba(196,161,96,.35); border-radius: 3px;
+  transition: border-color .15s ease, color .15s ease;
+}
+.tut-skip:hover { color: #ffe6b2; border-color: rgba(244,223,166,.8); }
+.tut-skip:active { transform: translateY(1px); }
+
+
+/* ===== 教程面板：层级与移动端布局（v2.1.6）=====
+   桌面端抬到小地图之上；触屏端改为顶部通栏，避免被小地图 / 底栏盖住。 */
+.tutorial-panel { z-index: 46; pointer-events: auto; }   /* #ui 是 pointer-events:none，必须显式打开 */
+.tut-skip { pointer-events: auto; }
+@media (max-width: 760px), (pointer: coarse) {
+  body.touch-ui .tutorial-panel {
+    left: 8px; right: 8px; width: auto; top: 62px;
+    max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    font-size: 12px; z-index: 48;
+  }
+  body.touch-ui .tutorial-panel .tut-step { padding: 4px 0; }
+  body.touch-ui .tut-skip { min-height: 34px; padding: 6px 14px; font-size: 12px; }
+  body.touch-ui .tut-foot { gap: 10px; }
+}
