@@ -8100,6 +8100,278 @@ if (params.get('dev') === '1') (function initDevConsole() {
   }, true);
   window.__devConsole = { show, isOpen: () => open };
 })();
+
+/* ===== v2.1.4 主菜单视效：等距网格 / 战争迷雾 / 余烬 / 流星 / 阵营战旗 ===== */
+(function initMenuFx() {
+  const bg = document.getElementById('menu-bg');
+  const stage = document.getElementById('faction-stage');
+  const screen = document.getElementById('start-screen');
+  if (!bg || !screen) return;
+  const bctx = bg.getContext('2d');
+  const sctx = stage ? stage.getContext('2d') : null;
+
+  const FACTION_ART = {
+    rose:  { name: '赤蔷薇', tag: '王座正统 · 天火', cloth: '#7f2d28', trim: '#e6c078', bright: '#f2d792', emblem: 'rose' },
+    pine:  { name: '青杉',   tag: '山林盟约 · 雷霆', cloth: '#2a5c42', trim: '#bfe3c6', bright: '#cde8cf', emblem: 'pine' },
+    raven: { name: '黑鸦',   tag: '铁鸦军团 · 瘟疫', cloth: '#3e3050', trim: '#c6b0e6', bright: '#d9c6f2', emblem: 'raven' }
+  };
+  function currentFaction() {
+    const sk = S.skirmish && S.skirmish.faction;
+    if (FACTION_ART[sk]) return sk;
+    if (FACTION_ART[S.faction]) return S.faction;
+    return 'rose';
+  }
+  let lastFaction = null;
+  function syncFaction(f) {
+    if (f === lastFaction) return;
+    lastFaction = f;
+    document.body.dataset.faction = f;
+    const n = document.getElementById('faction-name');
+    const t = document.getElementById('faction-tag');
+    if (n) n.textContent = FACTION_ART[f].name;
+    if (t) t.textContent = FACTION_ART[f].tag;
+  }
+
+  let W = 1, H = 1, dpr = 1;
+  function resize() {
+    dpr = Math.min(1.25, window.devicePixelRatio || 1);
+    W = bg.clientWidth || window.innerWidth;
+    H = bg.clientHeight || window.innerHeight;
+    bg.width = Math.max(1, Math.round(W * dpr));
+    bg.height = Math.max(1, Math.round(H * dpr));
+    bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const embers = [];
+  for (let i = 0; i < 34; i++) {
+    embers.push({ x: Math.random(), y: Math.random(), s: .5 + Math.random() * 1.4,
+      vy: .012 + Math.random() * .03, drift: Math.random() * 6.28, a: .25 + Math.random() * .5 });
+  }
+  const fogs = [];
+  for (let i = 0; i < 5; i++) {
+    fogs.push({ x: Math.random(), y: .15 + Math.random() * .7, r: .18 + Math.random() * .22,
+      vx: (.004 + Math.random() * .008) * (Math.random() < .5 ? -1 : 1), a: .05 + Math.random() * .06 });
+  }
+  let meteor = null, meteorIn = 2.5 + Math.random() * 4;
+
+  const HOVER_SEL = '#start-screen button, #start-screen .cfg-toggle, #start-screen .ally-toggle';
+  let actx = null, lastBlip = 0;
+  function hoverBlip() {
+    const now = performance.now();
+    if (now - lastBlip < 70) return;
+    lastBlip = now;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      actx = actx || new AC();
+      if (actx.state === 'suspended') actx.resume().catch(() => {});
+      const t = actx.currentTime;
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(1720, t);
+      o.frequency.exponentialRampToValueAtTime(2480, t + .035);
+      g.gain.setValueAtTime(.0001, t);
+      g.gain.exponentialRampToValueAtTime(.05, t + .008);
+      g.gain.exponentialRampToValueAtTime(.0001, t + .085);
+      o.connect(g).connect(actx.destination);
+      o.start(t); o.stop(t + .1);
+    } catch (_) {}
+  }
+  screen.addEventListener('pointerover', e => {
+    if (e.target.closest && e.target.closest(HOVER_SEL)) hoverBlip();
+  });
+
+  function drawGrid(t, faction) {
+    const shift = (t * 14) % 64;
+    bctx.save();
+    bctx.globalAlpha = .16;
+    bctx.strokeStyle = 'rgba(196,161,96,.55)';
+    bctx.lineWidth = 1;
+    const stepX = 64, stepY = 32;
+    for (let i = -H; i < W + H; i += stepX) {
+      bctx.beginPath();
+      bctx.moveTo(i + shift, 0);
+      bctx.lineTo(i + shift + H, H);
+      bctx.stroke();
+    }
+    for (let j = -W; j < H + W; j += stepY) {
+      bctx.beginPath();
+      bctx.moveTo(0, j + shift * .5);
+      bctx.lineTo(W, j + shift * .5 + W * .5);
+      bctx.stroke();
+    }
+    bctx.restore();
+  }
+
+  function drawFog(t) {
+    for (const f of fogs) {
+      const x = ((f.x + t * f.vx) % 1.4) * W - W * .2;
+      const y = f.y * H;
+      const g = bctx.createRadialGradient(x, y, 10, x, y, f.r * W);
+      g.addColorStop(0, 'rgba(150,160,140,' + f.a + ')');
+      g.addColorStop(.55, 'rgba(110,120,105,' + (f.a * .5) + ')');
+      g.addColorStop(1, 'rgba(80,90,80,0)');
+      bctx.fillStyle = g;
+      bctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function drawEmbers(dt, t) {
+    for (const e of embers) {
+      e.y -= e.vy * dt;
+      e.drift += dt * .8;
+      if (e.y < -.03) { e.y = 1.03; e.x = Math.random(); }
+      const px = (e.x + Math.sin(e.drift) * .012) * W;
+      const py = e.y * H;
+      const flick = .65 + .35 * Math.sin(t * 4 + e.drift);
+      bctx.globalAlpha = e.a * flick;
+      bctx.fillStyle = '#e7a95f';
+      bctx.beginPath();
+      bctx.arc(px, py, e.s, 0, 7);
+      bctx.fill();
+      bctx.globalAlpha = e.a * flick * .35;
+      bctx.beginPath();
+      bctx.arc(px, py, e.s * 3.2, 0, 7);
+      bctx.fill();
+    }
+    bctx.globalAlpha = 1;
+  }
+
+  function drawMeteor(dt) {
+    meteorIn -= dt;
+    if (!meteor && meteorIn <= 0) {
+      meteorIn = 7 + Math.random() * 8;
+      const fromLeft = Math.random() < .5;
+      meteor = { x: fromLeft ? -40 : W + 40, y: H * (.05 + Math.random() * .35),
+        vx: (fromLeft ? 1 : -1) * (420 + Math.random() * 180), vy: 150 + Math.random() * 90,
+        t: 0, dur: 1.5 };
+    }
+    if (!meteor) return;
+    meteor.t += dt;
+    meteor.x += meteor.vx * dt;
+    meteor.y += meteor.vy * dt;
+    const k = meteor.t / meteor.dur;
+    if (k > 1) { meteor = null; return; }
+    const alpha = Math.sin(Math.min(1, k) * Math.PI) * .85;
+    const tailX = meteor.x - meteor.vx * .07, tailY = meteor.y - meteor.vy * .07;
+    const g = bctx.createLinearGradient(tailX, tailY, meteor.x, meteor.y);
+    g.addColorStop(0, 'rgba(255,180,90,0)');
+    g.addColorStop(.7, 'rgba(255,150,70,' + (alpha * .55) + ')');
+    g.addColorStop(1, 'rgba(255,235,190,' + alpha + ')');
+    bctx.strokeStyle = g; bctx.lineWidth = 2.4; bctx.lineCap = 'round';
+    bctx.beginPath(); bctx.moveTo(tailX, tailY); bctx.lineTo(meteor.x, meteor.y); bctx.stroke();
+    bctx.fillStyle = 'rgba(255,232,180,' + alpha + ')';
+    bctx.beginPath(); bctx.arc(meteor.x, meteor.y, 2.6, 0, 7); bctx.fill();
+  }
+
+  function drawStage(t, faction) {
+    if (!sctx || !stage) return;
+    const art = FACTION_ART[faction];
+    const w = stage.width, h = stage.height;
+    sctx.clearRect(0, 0, w, h);
+    const sway = Math.sin(t * .9) * 3;
+    // backing glow
+    const glow = sctx.createRadialGradient(w / 2, h * .34, 8, w / 2, h * .34, w * .62);
+    glow.addColorStop(0, art.cloth + '66');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    sctx.fillStyle = glow;
+    sctx.fillRect(0, 0, w, h);
+    // banner cloth
+    sctx.save();
+    sctx.translate(w / 2 + sway * .4, h * .12);
+    const bw = w * .52, bh = h * .56;
+    sctx.beginPath();
+    sctx.moveTo(-bw / 2, 0);
+    sctx.lineTo(bw / 2, 0);
+    sctx.lineTo(bw / 2, bh * .72);
+    sctx.quadraticCurveTo(bw * .28 + sway, bh * .9, 0, bh);
+    sctx.quadraticCurveTo(-bw * .28 - sway, bh * .9, -bw / 2, bh * .72);
+    sctx.closePath();
+    const cloth = sctx.createLinearGradient(-bw / 2, 0, bw / 2, bh);
+    cloth.addColorStop(0, art.cloth);
+    cloth.addColorStop(.5, art.cloth + 'dd');
+    cloth.addColorStop(1, '#12100c');
+    sctx.fillStyle = cloth;
+    sctx.shadowColor = art.cloth; sctx.shadowBlur = 18;
+    sctx.fill();
+    sctx.shadowBlur = 0;
+    sctx.strokeStyle = art.trim; sctx.lineWidth = 1.6; sctx.globalAlpha = .8;
+    sctx.stroke();
+    sctx.globalAlpha = 1;
+    // emblem
+    sctx.translate(0, bh * .36);
+    sctx.strokeStyle = art.trim; sctx.lineWidth = 2;
+    sctx.beginPath(); sctx.arc(0, 0, bw * .2, 0, 7); sctx.stroke();
+    sctx.beginPath();
+    if (art.emblem === 'rose') {
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + i * Math.PI * 2 / 5;
+        const r = i % 2 ? bw * .07 : bw * .17;
+        sctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r);
+      }
+      sctx.closePath();
+    } else if (art.emblem === 'pine') {
+      sctx.moveTo(0, -bw * .18);
+      sctx.lineTo(bw * .13, bw * .1);
+      sctx.lineTo(-bw * .13, bw * .1);
+      sctx.closePath();
+    } else {
+      sctx.moveTo(-bw * .16, -bw * .1);
+      sctx.lineTo(0, bw * .05);
+      sctx.lineTo(bw * .16, -bw * .1);
+      sctx.moveTo(0, bw * .05);
+      sctx.lineTo(0, bw * .16);
+    }
+    sctx.stroke();
+    // hanging rod + tassels
+    sctx.restore();
+    sctx.strokeStyle = 'rgba(196,161,96,.75)'; sctx.lineWidth = 3;
+    sctx.beginPath(); sctx.moveTo(w * .16, h * .12); sctx.lineTo(w * .84, h * .12); sctx.stroke();
+    sctx.fillStyle = art.trim;
+    for (const side of [-1, 1]) {
+      sctx.beginPath();
+      sctx.arc(w / 2 + side * w * .26, h * .12, 3.2, 0, 7);
+      sctx.fill();
+    }
+    // drifting sparks above the banner
+    for (let i = 0; i < 8; i++) {
+      const a = (t * .4 + i * .7) % 1;
+      const px = w * .5 + Math.sin(i * 2.1 + t) * w * .3;
+      const py = h * .72 + a * h * .2;
+      sctx.globalAlpha = (1 - a) * .35;
+      sctx.fillStyle = art.bright;
+      sctx.beginPath(); sctx.arc(px, py, 1.1, 0, 7); sctx.fill();
+    }
+    sctx.globalAlpha = 1;
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(.05, (now - last) / 1000);
+    last = now;
+    const visible = document.body.classList.contains('menu-mode') && !screen.hidden;
+    if (!visible) return;                       // 进入对局后彻底不画
+    const f = currentFaction();
+    syncFaction(f);
+    const t = now / 1000;
+    bctx.clearRect(0, 0, W, H);
+    const sky = bctx.createLinearGradient(0, 0, W * .4, H);
+    sky.addColorStop(0, '#0a0b08');
+    sky.addColorStop(.55, '#0d0f0a');
+    sky.addColorStop(1, '#070806');
+    bctx.fillStyle = sky;
+    bctx.fillRect(0, 0, W, H);
+    drawGrid(t, f);
+    drawFog(t);
+    drawMeteor(dt);
+    drawEmbers(dt, t);
+    drawStage(t, f);
+  }
+  requestAnimationFrame(frame);
+})();
 // 调试用：?build=house:3 直接排入建筑队列，?move=x,y 让全部我方单位前往该点。
 const buildSpec = params.get('build');
 if (buildSpec && S.mode === 'playing') {
