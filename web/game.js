@@ -1899,6 +1899,24 @@ function edgePan(dt) {
 }
 function updateCamera(dt) {
   if (S.mode === 'menu' || S.mode === 'ended' || S.paused) return;
+  if (S.mode === 'spectating') {
+    // keep the camera on a living ally; re-target when the watched one dies
+    let f = S.spectateFocus;
+    if (!f || f.hp <= 0 || f.dead) {
+      f = S.buildings.find(b => b.team === ALLY && b.type === 'keep' && b.hp > 0)
+        || S.units.find(u => u.team === ALLY && u.hp > 0 && !u.garrisoned)
+        || S.buildings.find(b => b.team === ALLY && b.hp > 0) || null;
+      S.spectateFocus = f;
+    }
+    if (f) {
+      const c = viewCenter();
+      S.cam.x = lerp(S.cam.x, c.x - mapPos(f.x, f.y).x * S.cam.z, Math.min(1, dt * 2.2));
+      S.cam.y = lerp(S.cam.y, c.y - mapPos(f.x, f.y).y * S.cam.z, Math.min(1, dt * 2.2));
+      clampCamera();
+      return;
+    }
+    return;
+  }
   if (S.mode === 'playing') edgePan(dt);
   if (S.tour) {
     S.tour.t += dt / .65;
@@ -2750,6 +2768,28 @@ function selectedSuper() {
 function enemyHasKeep() {
   return S.buildings.some(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0);
 }
+/* The whole friendly team (player + same-team allies) still has a base? */
+function friendlyHasBase() {
+  return playerHasBase()
+    || S.buildings.some(b => b.team === ALLY && b.type === 'keep' && b.hp > 0)
+    || S.units.some(u => u.team === ALLY && u.type === 'baseVehicle' && u.hp > 0);
+}
+/* Player lost their base but a teammate is still fighting: watch instead of losing. */
+function enterSpectate() {
+  if (S.mode === 'spectating' || S.mode === 'ended') return;
+  S.mode = 'spectating';
+  S.paused = false;
+  S.placing = null; S.superAim = false; S.miniAim = false; S.forceAim = false; S.drag = null;
+  S.selected = []; S.selectedBuilding = null;
+  clearSelection();
+  S.spectateFocus = S.buildings.find(b => b.team === ALLY && b.type === 'keep' && b.hp > 0)
+    || S.units.find(u => u.team === ALLY && u.type === 'baseVehicle' && u.hp > 0)
+    || S.units.find(u => u.team === ALLY && u.hp > 0);
+  if (S.spectateFocus) centerCamera(S.spectateFocus.x, S.spectateFocus.y, Math.max(.95, S.cam.z), true);
+  toast('我方主堡陷落 —— 转入观战：盟友仍在战斗，他们取胜你同样算赢。', 'warn', 'shield');
+  Sound.play('hornlow');
+  updateHud(true);
+}
 function enemyHasBase() {
   return enemyHasKeep() || S.units.some(u => u.team === ENEMY && u.type === 'baseVehicle' && u.hp > 0);
 }
@@ -2763,8 +2803,13 @@ function kill(target) {
     burst(target.x, target.y, 'blood', 12);
     burst(target.x, target.y, 'dust', 4);
     S.selected = S.selected.filter(u => u !== target);
-    if (target.team === PLAYER && target.type === 'baseVehicle' && !playerHasBase()) endGame(false);
-    if (target.team === ENEMY && target.type === 'baseVehicle' && !enemyHasBase()) endGame(true);
+    if (target.type === 'baseVehicle') {
+      if (target.team === PLAYER && !playerHasBase()) {
+        if (friendlyHasBase()) enterSpectate(); else endGame(false);
+      }
+      if (target.team === ALLY && !friendlyHasBase()) endGame(false);
+      if (target.team === ENEMY && !enemyHasBase()) endGame(true);
+    }
   } else {
     S.buildings = S.buildings.filter(b => b !== target);
     if (S.selectedBuilding === target) S.selectedBuilding = null;
@@ -2779,12 +2824,19 @@ function kill(target) {
     Sound.play('boom');
     if (target.team === ENEMY) floatText(target.x, target.y, '建筑被摧毁', '#e1b654');
     if (target.type === 'keep') {
-      if (target.team === PLAYER && !playerHasBase()) endGame(false);
-      else if (target.team === ENEMY && !enemyHasBase()) endGame(true);
+      if (target.team === PLAYER && !playerHasBase()) {
+        if (friendlyHasBase()) enterSpectate(); else endGame(false);
+      } else if (target.team === ALLY && !friendlyHasBase()) {
+        endGame(false);
+      } else if (target.team === ENEMY && !enemyHasBase()) {
+        endGame(true);
+      }
       return;
     }
-    if (target.team === PLAYER) toast(`${bname(target)}被摧毁！`, 'warn', 'castle');
-    if (target.team === PLAYER && !playerHasBase()) endGame(false);
+    if (target.team === PLAYER || target.team === ALLY) toast(`${bname(target)}被摧毁！`, 'warn', 'castle');
+    if (target.team === PLAYER && !playerHasBase()) {
+      if (friendlyHasBase()) enterSpectate(); else endGame(false);
+    }
   }
   updateHud(true);
 }
@@ -6841,7 +6893,7 @@ let miniLast = 0;
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000);
   last = now;
-  if (S.mode === 'playing' && !S.paused) update(dt);
+  if ((S.mode === 'playing' || S.mode === 'spectating') && !S.paused) update(dt);
   else {
     updateParticles(dt);
     updateCamera(dt);
@@ -6882,7 +6934,10 @@ window.IronCrown = {
   visible: (x, y) => isVisibleToPlayer(x, y),
   canPlace: (type, tx, ty, opts) => canPlace(type, tx, ty, opts),
   deployBase: (u) => deployBaseVehicle(u),
-  fog: fogCanvas
+  fog: fogCanvas,
+  // automation / debugging: drive the real death rules (spectate, team victory)
+  kill: (t) => kill(t),
+  spectate: () => enterSpectate()
 };
 
 const params = new URLSearchParams(location.search);
