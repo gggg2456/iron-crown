@@ -173,6 +173,7 @@ function renderSlotTable() {
 /* v2.0.0 AI 性格：默认 classic 完全走原逻辑，只有 ?aipersonality=smart 才启用。 */
 const AI_PROFILES = {
   rose: {
+    kind: 'push',
     label: '赤蔷薇 · 正面推进',
     waveMul: 1.35, waveEvery: 1.0, requireTowers: 0,
     waveUnits: [['knight', .45], ['swordsman', .35], ['archer', .12], ['lancer', .08]],
@@ -182,6 +183,7 @@ const AI_PROFILES = {
     trainUnits: [['knight', .4], ['swordsman', .4], ['archer', .2]]
   },
   pine: {
+    kind: 'turtle',
     label: '青杉 · 防守反击',
     waveMul: .7, waveEvery: .6, requireTowers: 2,
     waveUnits: [['archer', .45], ['crossbowman', .3], ['swordsman', .25]],
@@ -192,6 +194,7 @@ const AI_PROFILES = {
     trainUnits: [['archer', .5], ['crossbowman', .3], ['swordsman', .2]]
   },
   raven: {
+    kind: 'harass',
     label: '黑鸦 · 多线骚扰',
     waveMul: .9, waveEvery: .8, requireTowers: 0,
     waveUnits: [['dog', .38], ['lancer', .3], ['shaman', .16], ['assassin', .16]],
@@ -3647,7 +3650,13 @@ function launchWaveSmart() {
   S.wave.n++;
   if (!S.aiTimes.firstWave) S.aiTimes.firstWave = Math.round(S.time);
   const share = hostileAICount() > 1 ? 1.5 : 1;
-  const size = Math.round((diff.base + Math.floor(S.wave.n * diff.grow) + (L.extra || 0)) * share * prof.waveMul);
+  let size = Math.round((diff.base + Math.floor(S.wave.n * diff.grow) + (L.extra || 0)) * share * prof.waveMul);
+  // 黑鸦（骚扰）保底 6 个编成，不参与平均分摊；其余人分剩下的池子
+  const harassFloor = 6;
+  const harassAlive = S.slots.some(sl => sl && sl.owner === 'ai' && sl.ai
+    && sl.ai !== (S.aiPrimary || null) && sl.ai.prof && sl.ai.prof.kind === 'harass');
+  if (prof.kind === 'harass') size = Math.max(size, harassFloor);
+  else if (harassAlive) size = Math.max(0, size - harassFloor);
   const barracks = S.buildings.find(b => b.team === ENEMY && b.type === 'barracks');
   const units = [];
   for (let i = 0; i < Math.max(1, size); i++) {
@@ -3843,7 +3852,10 @@ class AIPlayer {
     this.nextTrain = (this.nextTrain === undefined ? 8 : this.nextTrain) - dt;
     if (this.nextTrain <= 0) {
       this.nextTrain = prof.trainEvery * rnd(.85, 1.15);
-      if (this.allTeamUnits().length < prof.trainMax) {
+      const ownCount = this.units().length;
+      const underCap = this.allTeamUnits().length < prof.trainMax;
+      const floorOk = prof.kind === 'harass' && ownCount < 6;   // 骚扰保底编成
+      if (underCap || floorOk) {
         const base = this.structures('barracks');
         if (base) {
           const type = pickWeighted(prof.trainUnits);
