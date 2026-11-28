@@ -1241,51 +1241,143 @@ function updateCampaignUI() {
   const main = $('#btn-start .start-btn-main');
   if (main) main.textContent = `开 始 第 ${n} 章`;
 }
+/* ===== 新手教程：事件驱动状态机（v2.1.6）=====
+   设计原则：
+   - 判定只看「动作/支出」，不看金币数量这类会与资源上限打架的条件；
+   - 每个事件只触发一次求值，不轮询；
+   - 每步都有 45 秒强制通过 + 手动「跳过此步」，绝不卡关；
+   - check() 读的是当前世界状态（已建成/已训练/已击杀），
+     所以玩家中途用上帝面板刷资源、提前造好建筑也不会崩，进入步骤时立刻判过。 */
+const TUT_STEP_SECONDS = 45;
 const TUT_STEPS = [
-  { text: '训练 2 名农民：选中主堡 → 兵种页 → 农民' },
-  { text: '采集 300 金币：选中农民，左键点金矿' },
-  { text: '建造 1 座农舍：建造页 → 农舍，就绪后放置' },
-  { text: '训练 3 名步兵：长矛 / 剑士 / 掷矛手' },
-  { text: '摧毁黑鸦哨站：全选部队，右键进攻' }
+  {
+    id: 'move',
+    text: '框选我们的战士，右键点地面让他们列阵。',
+    tip: '左键拖出选框，右键点地面 = 移动',
+    need: ['moveOrder'],
+    check: () => !!S.tutSeen.moveOrder && tutArmy().length > 0
+  },
+  {
+    id: 'gather',
+    text: '选中农民，右键点一下金矿，他会自动往返采矿。',
+    tip: '打仗需要钱，农民是唯一的收入来源',
+    need: ['gather'],
+    check: () => !!S.tutSeen.gather || S.units.some(u => u.team === PLAYER && u.type === 'peasant' && u.order && u.order.type === 'gather')
+  },
+  {
+    id: 'house',
+    text: '点【建造】造个农舍，加人口上限。',
+    tip: '人口满了就造不了兵，农舍 +6',
+    need: ['buildDone'],
+    check: () => playerHasBuilding('house')
+  },
+  {
+    id: 'army',
+    text: '造一座兵营，再训练 2 名长矛兵。',
+    tip: '长矛兵克制骑兵，是前期主力',
+    need: ['unitTrained'],
+    check: () => playerHasBuilding('barracks') && tutArmy().length >= 2
+  },
+  {
+    id: 'fight',
+    text: '消灭来试探的敌人，检验你的部队。',
+    tip: '选中部队按 Q 攻击移动，右键也能直接下令',
+    need: ['kill'],
+    check: () => (S.tutKills || 0) >= 1
+  }
 ];
-function tutorialState() {
-  const peasants = S.units.filter(u => u.team === PLAYER && u.type === 'peasant').length
-    + (S.prod.keep.cur && S.prod.keep.cur.type === 'peasant' ? 1 : 0)
-    + S.prod.keep.queue.filter(i => i.type === 'peasant').length;
-  const army = S.units.filter(u => u.team === PLAYER
-    && ['spearman', 'swordsman', 'archer', 'crossbowman', 'javelineer', 'lancer'].includes(u.type)).length;
-  return {
-    peasants,
-    gold: S.stats.gathered,
-    house: playerHasBuilding('house'),
-    army,
-    keepGone: !S.buildings.some(b => b.team === ENEMY && b.type === 'keep' && b.hp > 0)
-  };
+function tutArmy() {
+  return S.units.filter(u => u.team === PLAYER && u.hp > 0 && !u.garrisoned
+    && u.type !== 'peasant' && u.type !== 'baseVehicle');
+}
+function tutReset() {
+  S.tutStep = 0;
+  S.tutT = 0;
+  S.tutSeen = {};
+  S.tutKills = 0;
+  S.tutTrained = {};
+  S.tutFlags = {};
+}
+function tutEmit(name, data) {
+  if (!S.tutorial) return;
+  S.tutSeen = S.tutSeen || {};
+  S.tutSeen[name] = true;
+  if (name === 'unitTrained' && data && data.type) {
+    S.tutTrained = S.tutTrained || {};
+    S.tutTrained[data.type] = (S.tutTrained[data.type] || 0) + 1;
+  }
+  if (name === 'kill') S.tutKills = (S.tutKills || 0) + 1;
+  tutEvaluate();
+}
+function tutStepDone(st) {
+  if (!st) return true;
+  try {
+    if (st.need && !st.need.every(n => S.tutSeen && S.tutSeen[n])) return false;
+    return st.check ? !!st.check() : true;
+  } catch (_) { return false; }
+}
+function tutEvaluate() {
+  if (!S.tutorial || S.mode !== 'playing') return;
+  let guard = 0;
+  while (guard++ < 16) {
+    const st = TUT_STEPS[S.tutStep];
+    if (!st) { tutFinish(); return; }
+    if (!tutStepDone(st)) return;
+    tutAdvance('done');
+  }
+}
+function tutAdvance(reason) {
+  if (!S.tutorial) return;
+  const st = TUT_STEPS[S.tutStep];
+  if (reason === 'skip') toast('已跳过这一步', '', 'scroll');
+  else if (reason === 'timeout') toast('这一步停留太久，自动进入下一步', 'warn', 'scroll');
+  S.tutStep++;
+  S.tutT = 0;
+  renderTutorial();
+  const next = TUT_STEPS[S.tutStep];
+  if (!next) { tutFinish(); return; }
+  if (next.assist) { try { next.assist(); } catch (_) {} }
+  toast(`教学 · ${next.text}`, '', 'scroll');
+  Sound.play('ui');
+  tutEvaluate();          // 新步骤若已满足（例如提前造好了）立即通过
+}
+function tutSkip() {
+  if (!S.tutorial) return;
+  tutAdvance('skip');
+}
+function tutFinish() {
+  if (!S.tutorial || S.mode !== 'playing') return;
+  toast('教学完成！你已经掌握采集、建造、出兵与进攻。', '', 'crest');
+  Sound.play('horn');
+  S.tutorial = false;
+  renderTutorial();
+  endGame(true);
+}
+function tutorialTick(dt) {
+  if (!S.tutorial) return;
+  if (S.mode !== 'playing') return;
+  S.tutT = (S.tutT || 0) + dt;
+  const st = TUT_STEPS[S.tutStep];
+  const limit = (st && st.timeout) || TUT_STEP_SECONDS;
+  if (S.tutT >= limit) tutAdvance('timeout');
+  renderTutorial();
 }
 function renderTutorial() {
   const el = $('#tutorial-panel');
   if (!el) return;
   el.hidden = !S.tutorial;
   if (!S.tutorial) return;
-  el.innerHTML = '<b>新手教学</b>' + TUT_STEPS.map((s, i) =>
-    `<div class="tut-step ${i < S.tutStep ? 'done' : i === S.tutStep ? 'now' : ''}"><span>${i < S.tutStep ? '✔' : i + 1}</span>${s.text}</div>`).join('');
-}
-function updateTutorial(dt) {
-  if (!S.tutorial) return;
-  S.tutTimer = (S.tutTimer || 0) - dt;
-  if (S.tutTimer > 0) return;
-  S.tutTimer = .5;
-  const st = tutorialState();
-  const done = [st.peasants >= 2, st.gold >= 300, st.house, st.army >= 3, st.keepGone];
-  while (S.tutStep < TUT_STEPS.length && done[S.tutStep]) {
-    S.tutStep++;
-    if (S.tutStep < TUT_STEPS.length) toast(`教学步骤完成，下一步：${TUT_STEPS[S.tutStep].text}`, '', 'scroll');
-  }
-  renderTutorial();
-  if (S.tutStep >= TUT_STEPS.length && S.mode === 'playing') {
-    toast('教学完成：你已经学会采集、建造与进攻。', '', 'crest');
-    endGame(true);
-  }
+  const total = TUT_STEPS.length;
+  const st = TUT_STEPS[S.tutStep];
+  const limit = (st && st.timeout) || TUT_STEP_SECONDS;
+  const left = Math.max(0, Math.ceil(limit - (S.tutT || 0)));
+  const rows = TUT_STEPS.map((x, i) =>
+    `<div class="tut-step ${i < S.tutStep ? 'done' : i === S.tutStep ? 'now' : ''}"><span>${i < S.tutStep ? '✔' : i + 1}</span>${x.text}</div>`).join('');
+  el.innerHTML = `<b>新手教学 <i class="tut-count">${Math.min(S.tutStep + 1, total)}/${total}</i></b>`
+    + rows
+    + (st ? `<div class="tut-tip">${st.tip || ''}</div>` : '')
+    + `<div class="tut-foot"><span class="tut-timer">${left}s 后自动跳过</span>`
+    + `<button id="tut-skip" type="button" class="tut-skip">跳过此步</button></div>`;
 }
 function fmtTime(s) {
   s = Math.max(0, Math.ceil(s));
@@ -1587,6 +1679,12 @@ function spawnSkirmishStart() {
     const keep = S.buildings.find(b => b.team === PLAYER && b.type === 'keep');
     const cx = keep ? keep.x : 9.65, cy = keep ? keep.y : 36.35;
     for (let i = 0; i < 2; i++) addUnit('peasant', PLAYER, cx - 1.4 + i * 1.2, cy + 2.4);
+    // 第一步要「框选初始部队」：给一支能立刻指挥的小队
+    const starter = ['spearman', 'spearman', 'swordsman', 'archer'];
+    starter.forEach((type, i) => {
+      const a = (i / starter.length) * Math.PI * 2;
+      addUnit(type, PLAYER, cx + Math.cos(a) * 2.6, cy + 2.6 + Math.sin(a) * 2.0);
+    });
     const bs = findKeepSpot(cx + 4, cy + 3);
     if (bs) {
       clearKeepArea(bs.tx, bs.ty);
@@ -3153,6 +3251,7 @@ function enemyHasBase() {
 function kill(target) {
   if (target.dead) return;
   target.dead = true;
+  if (target.team === ENEMY) tutEmit('kill', { kind: target.kind, type: target.type });
   if (target.kind === 'unit') {
     S.units = S.units.filter(u => u !== target);
     if (S.corpses && S.corpses.length < 80) {
@@ -3264,6 +3363,7 @@ function updateBuildings(dt) {
         b.constructed = true;
         b.progress = 1;
         if (b.team === PLAYER) {
+          tutEmit('buildDone', { type: b.type });
           floatText(b.x, b.y, '建造完成', '#f0d18a');
           toast(`${bname(b)}建造完成`, '', 'castle');
           Sound.play('buildPlace');
@@ -3434,6 +3534,7 @@ function updateTraining(dt) {
     if (b) {
       const p = spawnPointFor(b);
       const u = addUnit(t.type, PLAYER, p.x, p.y);
+      tutEmit('unitTrained', { type: t.type });
       u.home = { x: p.x, y: p.y };
       if (b.rally) orderMove(u, b.rally.x + rnd(-.8, .8), b.rally.y + rnd(-.8, .8));
       if (t.type === 'hero') {
@@ -3805,6 +3906,7 @@ function deployBaseVehicle(u) {
   b.progress = 1;
   burst(b.x, b.y, 'dust', 22);
   burst(b.x, b.y, 'gold', 8);
+  tutEmit('buildDone', { type: 'keep' });
   floatText(b.x, b.y, '基地展开', '#f0d18a');
   S.selectedBuilding = b;
   S.inspect = null;
@@ -4618,7 +4720,7 @@ function update(dt) {
   }
   updateTraining(dt);
   updateConstruction(dt);
-  updateTutorial(dt);
+  tutorialTick(dt);
   if (window.__dbgHud) window.__dbgHud();
   Sound.ambient(dt);
   updateHud();
@@ -6526,6 +6628,7 @@ function castSuperAt(sx, sy) {
   const w = screenToWorld(sx, sy);
   S.superAim = false; S.superCd = sup.cd;
   const hits = applySuperAt(S.superKey, w.x, w.y, PLAYER);
+  tutEmit('superCast', { key: S.superKey });
   floatText(w.x, w.y - 1, sup.name, sup.color);
   Sound.play('boom'); Sound.play('horn');
   canvas.style.cursor = 'default';
@@ -6872,6 +6975,9 @@ function zoomCamera(factor) {
   S.cam.y = c.y - (c.y - S.cam.y) * (z / old);
   S.cam.z = z; clampCamera();
 }
+function tutHeroTouched() {
+  if (S.tutorial) tutEmit('heroSelect', {});
+}
 function announceSelection() {
   const u = S.selected.find(x => x.team === PLAYER && x.hp > 0);
   if (u) Voice.play('select', u);
@@ -6938,11 +7044,12 @@ function commandAt(sx, sy) {
       else orderMove(u, hit.ref.x + rnd(-1.2, 1.2), hit.ref.y + 1.7);
     }
     Voice.play('move', S.selected[0]);
-    if (any) { toast('农民开始采金', '', 'coin'); Sound.play('ui'); }
+    if (any) { tutEmit('gather', {}); toast('农民开始采金', '', 'coin'); Sound.play('ui'); }
     return;
   }
   const n = S.selected.length;
   const cols = Math.ceil(Math.sqrt(n));
+  tutEmit('moveOrder', { units: S.selected.length });
   S.selected.forEach((u, i) => {
     const row = Math.floor(i / cols), col = i % cols;
     const ox = (col - (cols - 1) / 2) * .8, oy = (row - (cols - 1) / 2) * .8;
@@ -7174,6 +7281,9 @@ function bindUI() {
     e.currentTarget.classList.toggle('active', S.skirmish.supers);
     updateCampaignUI();
     Sound.play('ui');
+  });
+  document.getElementById('tutorial-panel')?.addEventListener('pointerdown', e => {
+    if (e.target && e.target.id === 'tut-skip') { e.preventDefault(); tutSkip(); }
   });
   $$('#command-tabs .tab').forEach(tab => tab.addEventListener('click', () => {
     S.tab = tab.dataset.tab; renderTabs(); renderCards(); hideTooltip(); Sound.play('ui');
@@ -7677,7 +7787,7 @@ function startGame() {
   if (S.tutorial) S.skirmish = { gold: 600, inf: 0, supers: false, faction: 'rose', map: 'border' };
   updateCampaignUI();
   resetWorld();
-  if (S.tutorial) { S.tutStep = 0; renderTutorial(); }
+  if (S.tutorial) { tutReset(); renderTutorial(); }
   S.mode = 'playing'; S.paused = false;
   document.body.classList.remove('menu-mode');
   const st = $('#start-screen');
@@ -7786,6 +7896,16 @@ window.IronCrown = {
   canPlace: (type, tx, ty, opts) => canPlace(type, tx, ty, opts),
   deployBase: (u) => deployBaseVehicle(u),
   soundState: () => (Sound.ac ? Sound.ac.state : 'none'),
+  tutorial: () => ({
+    active: !!S.tutorial, step: S.tutStep, total: TUT_STEPS.length,
+    id: (TUT_STEPS[S.tutStep] || {}).id || null,
+    elapsed: Math.round((S.tutT || 0) * 10) / 10,
+    seen: Object.keys(S.tutSeen || {}), kills: S.tutKills || 0
+  }),
+  tutSkip: () => tutSkip(),
+  tutEmit: (n, d) => tutEmit(n, d),
+  orderMove: (u, x, y) => orderMove(u, x, y),
+  selectUnits: (list) => { S.selected = list.slice(); updateSelectionPanel(true); },
   fog: fogCanvas,
   // automation / debugging: drive the real death rules (spectate, team victory)
   kill: (t) => kill(t),
