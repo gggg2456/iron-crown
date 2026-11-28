@@ -29,7 +29,7 @@ if (-not $SkipInstall) {
 }
 
 Write-Host '==> electron-packager' -ForegroundColor Cyan
-npx electron-packager . IronCrown --platform=win32 --arch=x64 --out=dist --overwrite --prune --icon=web/iron-crown.ico --app-version=$version
+npx electron-packager . IronCrown --platform=win32 --arch=x64 --out=dist --overwrite --prune --icon=web/iron-crown.ico --app-version=$version --ignore="^/(start-local-test\.cmd|tools/dev|docs|node_modules|\.github)"
 if ($LASTEXITCODE -ne 0) { throw "electron-packager failed (exit $LASTEXITCODE)" }
 
 $appDir = Join-Path $root 'dist\IronCrown-win32-x64'

@@ -105,7 +105,7 @@ foreach ($br in @('main', 'master')) {
 }
 
 # 4) blobs - skip build output and VCS internals
-$skip = '\\(dist|node_modules|\.git|\.work)\\|\.zip$|\.png$'
+$skip = '\\(dist|node_modules|\.git|\.work|dev)\\|\\start-local-test\.cmd$|\.zip$|\.png$'
 $files = @(Get-ChildItem -LiteralPath $Staging -Recurse -File -Force |
   Where-Object { $_.FullName.Substring($Staging.Length) -notmatch $skip } |
   Sort-Object FullName)
