@@ -170,6 +170,49 @@ function renderSlotTable() {
     btn.classList.toggle('active', btn.dataset.preset === preset);
   }
 }
+/* v2.0.0 AI 性格：默认 classic 完全走原逻辑，只有 ?aipersonality=smart 才启用。 */
+const AI_PROFILES = {
+  rose: {
+    label: '赤蔷薇 · 正面推进',
+    waveMul: 1.35, waveEvery: 1.0, requireTowers: 0,
+    waveUnits: [['knight', .45], ['swordsman', .35], ['archer', .12], ['lancer', .08]],
+    target: 'keep', assaultNeed: 7,
+    build: [['barracks', 6], ['workshop', 50], ['fountain', 0], ['barracks', 75], ['tower', 95]],
+    trainEvery: 13, trainMax: 22,
+    trainUnits: [['knight', .4], ['swordsman', .4], ['archer', .2]]
+  },
+  pine: {
+    label: '青杉 · 防守反击',
+    waveMul: .7, waveEvery: .6, requireTowers: 2,
+    waveUnits: [['archer', .45], ['crossbowman', .3], ['swordsman', .25]],
+    target: 'keep', assaultNeed: 10, holdUntilTowers: 2, preferHighland: true,
+    build: [['tower', 0], ['barracks', 22], ['tower', 38], ['ballista', 58], ['fountain', 0],
+            ['workshop', 115], ['tower', 135]],
+    trainEvery: 11, trainMax: 16,
+    trainUnits: [['archer', .5], ['crossbowman', .3], ['swordsman', .2]]
+  },
+  raven: {
+    label: '黑鸦 · 多线骚扰',
+    waveMul: .9, waveEvery: .8, requireTowers: 0,
+    waveUnits: [['dog', .38], ['lancer', .3], ['shaman', .16], ['assassin', .16]],
+    target: 'raid', assaultNeed: 9, raidSquads: 2,
+    build: [['barracks', 8], ['workshop', 65], ['tower', 105], ['fountain', 0]],
+    trainEvery: 10, trainMax: 18,
+    trainUnits: [['dog', .35], ['lancer', .3], ['shaman', .2], ['assassin', .15]],
+    raidTargets: ['peasant', 'market', 'mill', 'crate']
+  }
+};
+function pickWeighted(list) {
+  let r = Math.random();
+  for (const [type, w] of list) { r -= w; if (r <= 0) return type; }
+  return list[list.length - 1][0];
+}
+function smartProfileOf(ai) {
+  return (ai && ai.prof) || null;
+}
+function aiFactionOfSlot(slot) {
+  return (slot && slot.faction) || 'raven';
+}
 const AI_PACE = { barracksAt: 10, workshopAt: 90, superDelay: 90, trainMul: 1.0 };
 // 农民征召：临时民兵（不花金币，征召期不产金，20 秒后自动复原，最多同时 3 个）
 const MILITIA = { dmg: 8, hp: 100, range: 1.2, time: 20, max: 3 };
@@ -874,6 +917,7 @@ const S = {
   enemySite: { x: 34, y: 8 },
   allySite: { x: 44, y: 38 },
   allyEnabled: false,
+  aiPersonality: 'classic',
   tour: null
 };
 
@@ -1118,6 +1162,8 @@ function syncStartUI() {
   const cfg = $('#skirmish-config');
   if (cfg) cfg.hidden = mode !== 'skirmish';
   if (mode === 'skirmish') renderSlotTable();
+  $$('#sk-aipersonality button').forEach(b =>
+    b.classList.toggle('active', b.dataset.personality === (S.aiPersonality || 'classic')));
   if (S.skirmish) {
     $$('#sk-gold button').forEach(b => b.classList.toggle('active', +b.dataset.gold === S.skirmish.gold));
     $$('#sk-inf button').forEach(b => b.classList.toggle('active', +b.dataset.inf === S.skirmish.inf));
@@ -1577,6 +1623,7 @@ function resetWorld() {
   S.aiTimes = {}; S.aiTrace = [];
   S.crateStats = { scans: 0, dispatches: 0, aborts: 0, picksPlayer: 0, picksEnemy: 0, picksAlly: 0, picksDispatched: 0, picksFree: 0, riskSpawns: 0, riskPicks: 0, dogPicks: 0 };
   S.milStats = { calls: 0, made: 0 };
+  S.smartStats = { peasantKills: 0, playerBuildingsLost: 0 };
   S.crateAborts = { combat: 0, gone: 0, timeout: 0 };
   S.pathBudget = 4;
   S.buildQ = { cur: null, queue: [] };
@@ -1633,19 +1680,19 @@ function resetWorld() {
     S.slots.forEach((slot, idx) => {
       if (!slot || slot.owner !== 'ai') return;
       if (slot.team === pt) {
-        S.aiAlly = new AIPlayer({ slot: idx, team: ALLY, kind: 'ally', teamId: slot.team });
+        S.aiAlly = new AIPlayer({ slot: idx, team: ALLY, kind: 'ally', teamId: slot.team, faction: slot.faction });
         slot.ai = S.aiAlly;
       } else if (hostile++ === 0) {
-        S.aiPrimary = new AIPlayer({ slot: idx, team: ENEMY, kind: 'primary', teamId: slot.team });
+        S.aiPrimary = new AIPlayer({ slot: idx, team: ENEMY, kind: 'primary', teamId: slot.team, faction: slot.faction });
         slot.ai = S.aiPrimary;
       } else {
-        S.aiSecond = new AIPlayer({ slot: idx, team: ENEMY, ai2: true, kind: 'second', teamId: slot.team });
+        S.aiSecond = new AIPlayer({ slot: idx, team: ENEMY, ai2: true, kind: 'second', teamId: slot.team, faction: slot.faction });
         slot.ai = S.aiSecond;
       }
     });
     S.allyEnabled = !!S.aiAlly;
   } else {
-    S.aiPrimary = new AIPlayer({ slot: 1, team: ENEMY, kind: 'primary' });
+    S.aiPrimary = new AIPlayer({ slot: 1, team: ENEMY, kind: 'primary', faction: (S.slots[1] && S.slots[1].faction) || 'raven' });
     S.slots[1].ai = S.aiPrimary;
     if (S.allyEnabled) {
       S.aiAlly = new AIPlayer({ slot: 3, team: ALLY, kind: 'ally' });
@@ -2923,6 +2970,7 @@ function kill(target) {
   if (target.kind === 'unit') {
     S.units = S.units.filter(u => u !== target);
     if (target.team === PLAYER) S.stats.losses++;
+    if (target.team === PLAYER && target.type === 'peasant' && S.smartStats) S.smartStats.peasantKills++;
     else if (target.team === ENEMY) S.stats.kills++;
     burst(target.x, target.y, 'blood', 12);
     burst(target.x, target.y, 'dust', 4);
@@ -2935,6 +2983,7 @@ function kill(target) {
       if (target.team === ENEMY && !enemyHasBase()) endGame(true);
     }
   } else {
+    if (target.team === PLAYER && S.smartStats) S.smartStats.playerBuildingsLost++;
     S.buildings = S.buildings.filter(b => b !== target);
     if (S.selectedBuilding === target) S.selectedBuilding = null;
     if (S.inspect === target) S.inspect = null;
@@ -3531,9 +3580,93 @@ function pickEnemyType(roll) {
   if (roll < .89) return 'archer';
   return 'knight';
 }
+function enemyWarTarget(kind, army) {
+  if (kind === 'keep') {
+    return S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0) || null;
+  }
+  // raid: 优先经济建筑，别直接撞主堡
+  const eco = S.buildings.filter(b => b.team === PLAYER && b.hp > 0
+    && ['market', 'mill', 'house', 'forge'].includes(b.type));
+  if (eco.length && Math.random() < .7) {
+    eco.sort((a, b) => Math.hypot(a.x - (army[0] || {}).x, a.y - (army[0] || {}).y)
+      - Math.hypot(b.x - (army[0] || {}).x, b.y - (army[0] || {}).y));
+    return eco[0];
+  }
+  const peas = S.units.filter(u => u.team === PLAYER && u.type === 'peasant' && u.hp > 0);
+  if (peas.length) return peas[Math.floor(Math.random() * peas.length)];
+  return S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0) || null;
+}
+function enemyRaidTarget(kind, sample) {
+  const from = sample || { x: MAP / 2, y: MAP / 2 };
+  if (kind === 'crate' && S.crates.length) {
+    const c = S.crates[Math.floor(Math.random() * S.crates.length)];
+    return { x: c.x, y: c.y };
+  }
+  if (kind === 'peasant') {
+    const peas = S.units.filter(u => u.team === PLAYER && u.type === 'peasant' && u.hp > 0 && !u.garrisoned);
+    if (peas.length) {
+      peas.sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y));
+      return peas[0];
+    }
+  }
+  const map = { market: ['market'], mill: ['mill'], house: ['house'] };
+  const kinds = map[kind] || ['market', 'mill'];
+  const list = S.buildings.filter(b => b.team === PLAYER && b.hp > 0 && kinds.includes(b.type));
+  if (list.length) {
+    list.sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y));
+    return list[0];
+  }
+  const anyB = S.buildings.filter(b => b.team === PLAYER && b.hp > 0 && b.type !== 'keep');
+  return anyB[0] || null;
+}
+function launchWaveSmart() {
+  const diff = DIFFS[S.diffKey];
+  const L = currentLevel();
+  const ai = (S.aiPrimary && S.aiPrimary.prof) ? S.aiPrimary : null;
+  const prof = ai ? ai.prof : AI_PROFILES.raven;
+  const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
+  if (!keep) { S.wave.timer = 3; return; }
+  if (prof.requireTowers && ai && ai.towersOf() < prof.requireTowers) {
+    S.wave.timer = 18; return;      // 青杉：塔没成型不出门
+  }
+  S.wave.n++;
+  if (!S.aiTimes.firstWave) S.aiTimes.firstWave = Math.round(S.time);
+  const share = hostileAICount() > 1 ? 1.5 : 1;
+  const size = Math.round((diff.base + Math.floor(S.wave.n * diff.grow) + (L.extra || 0)) * share * prof.waveMul);
+  const barracks = S.buildings.find(b => b.team === ENEMY && b.type === 'barracks');
+  const units = [];
+  for (let i = 0; i < Math.max(1, size); i++) {
+    const p = spawnPointFor(barracks || keep);
+    units.push(addUnit(pickWeighted(prof.waveUnits), ENEMY, p.x + rnd(-1.1, 1.1), p.y + rnd(-.6, .6)));
+  }
+  if (prof.target === 'raid') {
+    const squads = Math.max(2, prof.raidSquads || 2);
+    const per = Math.max(1, Math.floor(units.length / squads));
+    for (let i = 0; i < squads; i++) {
+      const t = enemyRaidTarget(prof.raidTargets[i % prof.raidTargets.length], units[i * per]);
+      if (!t) continue;
+      for (const u of units.slice(i * per, i * per + per)) {
+        u.order = { type: 'attackMove', x: t.x + rnd(-1.5, 1.5), y: t.y + rnd(-1.5, 1.5) };
+        u.target = null;
+      }
+    }
+  } else {
+    const pk = S.buildings.find(b => b.team === PLAYER && b.type === 'keep' && b.hp > 0);
+    if (pk) for (const u of units) {
+      u.order = { type: 'attackMove', x: pk.x + rnd(-2, 2), y: pk.y + rnd(-2, 2) };
+      u.target = null;
+    }
+  }
+  showBanner(S.wave.n);
+  Sound.play('horn');
+  const who = (FACTIONS[ai && ai.faction] || FACTIONS.raven).name;
+  toast(`${who} 第 ${S.wave.n} 波：${size} 名敌军（${prof.label}）`, 'warn', 'shield');
+  S.wave.timer = Math.max(18, Math.round((diff.every + (L.everyAdd || 0)) * prof.waveEvery - S.wave.n * 1.5));
+}
 function launchWave() {
   if (S.tutorial) return;
   if (S.mode !== 'playing') return;
+  if (S.aiPersonality === 'smart') return launchWaveSmart();
   const diff = DIFFS[S.diffKey];
   const L = currentLevel();
   const keep = S.buildings.find(b => b.team === ENEMY && b.type === 'keep');
@@ -3575,6 +3708,9 @@ class AIPlayer {
     this.ai2 = !!opts.ai2;               // second legion: owns only the units tagged ai2
     this.kind = opts.kind || 'primary';  // primary | second | ally
     this.teamId = (opts.teamId === undefined) ? 2 : opts.teamId;
+    this.faction = opts.faction || 'raven';
+    // 只有遭遇战 + smart 开关才启用性格，经典模式 prof 恒为 null
+    this.prof = (S.run === 'skirmish' && S.aiPersonality === 'smart') ? (AI_PROFILES[this.faction] || null) : null;
     this.enabled = opts.enabled !== false;
     this.super = null;
     this.reset();
@@ -3614,6 +3750,7 @@ class AIPlayer {
     return this.updatePrimary(dt);
   }
   updatePrimary(dt) {
+    if (this.prof) return this.updateSmart(dt);
     const diff = DIFFS[S.diffKey];
     const L = currentLevel();
     this.buildRetry -= dt;
@@ -3653,6 +3790,125 @@ class AIPlayer {
     this.attackTimer -= dt;
     if (this.attackTimer <= 0) this.assault();
     this.updateSuper(dt);
+  }
+  /* ---- smart personality tick ------------------------------------------ */
+  tryBuildAny(type, atTime = 0) {
+    if (S.time < atTime) return false;
+    if (this.structures(type)) return true;
+    const keep = this.structures('keep');
+    if (!keep) return false;
+    for (let r = 3; r <= 11; r++) {
+      for (let a = 0; a < 16; a++) {
+        const tx = clamp(Math.round(keep.x + Math.cos(a * Math.PI / 8) * r - 1), 0, MAP - 3);
+        const ty = clamp(Math.round(keep.y + Math.sin(a * Math.PI / 8) * r - 1), 0, MAP - 3);
+        if (!canPlace(type, tx, ty, { ignoreBuildRadius: true, ignoreUnits: true })) continue;
+        if (B[type].w) nudgeUnitsOut(tx, ty, B[type].w, B[type].d);
+        const b = addBuilding(type, tx, ty, this.team);
+        b.teamId = this.teamId;
+        if (this.ai2) b.ai2 = true;
+        b.constructed = true; b.progress = 1; b.builtAt = S.time;
+        burst(b.x, b.y, 'dust', 14);
+        return true;
+      }
+    }
+    return false;
+  }
+  towersOf() {
+    return S.buildings.filter(b => b.team === this.team && (b.type === 'tower' || b.type === 'ballista')
+      && b.hp > 0 && !b.dead && (this.ai2 ? b.ai2 : !b.ai2)).length;
+  }
+  updateSmart(dt) {
+    const prof = this.prof;
+    const diff = DIFFS[S.diffKey];
+    this.buildRetry -= dt;
+    if (this.buildRetry <= 0) {
+      this.buildRetry = 3;
+      for (const [type, at] of prof.build) this.tryBuildAny(type, at);
+    }
+    this.nextTrain = (this.nextTrain === undefined ? 8 : this.nextTrain) - dt;
+    if (this.nextTrain <= 0) {
+      this.nextTrain = prof.trainEvery * rnd(.85, 1.15);
+      if (this.allTeamUnits().length < prof.trainMax) {
+        const base = this.structures('barracks');
+        if (base) {
+          const type = pickWeighted(prof.trainUnits);
+          const p = spawnPointFor(base);
+          const u = addUnit(type, this.team, p.x + rnd(-.8, .8), p.y);
+          u.teamId = this.teamId;
+          if (this.ai2) u.ai2 = true;
+          u.order = { type: 'move', x: base.x + rnd(-2, 2), y: base.y + rnd(1.5, 3) };
+        }
+      }
+    }
+    this.tacticTimer -= dt;
+    if (this.tacticTimer <= 0) {
+      this.tacticTimer = 1.2;
+      this.updateTactics();
+      if (prof.preferHighland) this.parkOnHighland();
+    }
+    if (this.baseVehicleTimer > 0) {
+      this.baseVehicleTimer -= dt;
+      if (this.baseVehicleTimer <= 0) {
+        const bv = this.units().find(u => u.type === 'baseVehicle' && u.hp > 0 && !u.garrisoned);
+        if (bv && !this.deployBaseVehicle(bv)) this.baseVehicleTimer = 8;
+      }
+    }
+    this.attackTimer -= dt;
+    if (this.attackTimer <= 0) {
+      this.attackTimer = prof.target === 'raid' ? 16 : 12;
+      this.smartAssault(prof);
+    }
+    this.raidTimer = (this.raidTimer || 0) - dt;
+    if (prof.target === 'raid' && this.raidTimer <= 0) {
+      this.raidTimer = 26;
+      this.raidOnce(prof);
+    }
+    this.super = this.super || ((S.supersEnabled && S.run === 'skirmish')
+      ? { key: (FACTIONS[this.faction] || FACTIONS.raven).super, timer: 100, built: false, retry: 6 } : null);
+    this.updateSuper(dt);
+  }
+  parkOnHighland() {
+    const hl = [];
+    for (const [x, y, type] of (S.terrainList || [])) if (type === 'highland') hl.push([x, y]);
+    if (!hl.length) return;
+    for (const u of this.units()) {
+      if (u.hp <= 0 || u.garrisoned || u.type === 'baseVehicle' || u.order || u.target) continue;
+      if (terrainAt(u.x, u.y) === 'highland') continue;
+      let best = null, bd = 1e9;
+      for (const [x, y] of hl) {
+        const d = Math.hypot(x - u.x, y - u.y);
+        if (d < bd) { bd = d; best = [x, y]; }
+      }
+      if (best && bd < 16) u.order = { type: 'move', x: best[0] + .5, y: best[1] + .5 };
+    }
+  }
+  smartAssault(prof) {
+    const army = this.units().filter(u => u.hp > 0 && !u.garrisoned && u.type !== 'baseVehicle');
+    if (prof.requireTowers && this.towersOf() < prof.requireTowers) return;   // 龟缩期不出门
+    if (army.length < prof.assaultNeed) return;
+    const target = enemyWarTarget(prof.target, army);
+    if (!target) return;
+    for (const u of army.slice(0, Math.min(army.length, 14))) {
+      u.order = { type: 'attackMove', x: target.x + rnd(-2, 2), y: target.y + rnd(-2, 2) };
+      u.target = null;
+    }
+    Sound.play('hornlow');
+  }
+  raidOnce(prof) {
+    const idle = this.units().filter(u => u.hp > 0 && !u.garrisoned && !u.target && !u.order
+      && u.type !== 'peasant' && u.type !== 'baseVehicle');
+    if (idle.length < 4) return;
+    const squads = prof.raidSquads || 2;
+    const per = Math.min(4, Math.floor(idle.length / squads));
+    for (let i = 0; i < squads; i++) {
+      const type = prof.raidTargets[i % prof.raidTargets.length];
+      const t = enemyRaidTarget(type, idle[i * per]);
+      if (!t) continue;
+      for (const u of idle.slice(i * per, i * per + per)) {
+        u.order = { type: 'attackMove', x: t.x + rnd(-1.5, 1.5), y: t.y + rnd(-1.5, 1.5) };
+        u.target = null;
+      }
+    }
   }
   /* ---- offence ---------------------------------------------------------- */
   assault() {
@@ -6562,6 +6818,11 @@ function bindUI() {
     Sound.play('ui');
   }));
   $$('#sk-presets button').forEach(btn => btn.addEventListener('click', () => applyPreset(btn.dataset.preset)));
+  $$('#sk-aipersonality button').forEach(btn => btn.addEventListener('click', () => {
+    S.aiPersonality = btn.dataset.personality === 'smart' ? 'smart' : 'classic';
+    $$('#sk-aipersonality button').forEach(b => b.classList.toggle('active', b === btn));
+    Sound.play('ui');
+  }));
   $$('#sk-inf button').forEach(btn => btn.addEventListener('click', () => {
     if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
     S.skirmish.inf = parseInt(btn.dataset.inf, 10);
@@ -7389,6 +7650,7 @@ if (slotsSpec && S.slots && S.slots.length === 4) {
   });
 }
 if (params.get('reveal') === '1') S.revealAll = true;
+if (params.get('aipersonality') === 'smart') S.aiPersonality = 'smart';
 syncStartUI();
 if (params.has('autostart')) {
   startGame();
