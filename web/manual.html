@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>铁与王冠 · 操作手册</title>
+<link rel="icon" href="iron-crown.ico">
+<style>
+  :root{
+    --ink:#0b0907; --parch:#d8c29a; --parch-dim:#9f8a68; --gold:#d8b363;
+    --gold-bright:#f2d792; --line:rgba(216,179,99,.26);
+    --display:"Noto Serif SC","Songti SC","STSong","SimSun",serif;
+    --en:"Cinzel","Trajan Pro","Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;color:var(--parch);font-family:var(--display);
+    background:radial-gradient(ellipse at 50% -10%,rgba(164,116,52,.16),transparent 60%),
+               linear-gradient(180deg,#12100b,#080706 70%,#050403);
+    padding:40px 20px 64px;
+  }
+  .shell{width:min(920px,100%);margin:0 auto}
+  h1{font-size:clamp(22px,3.4vw,34px);color:var(--gold-bright);letter-spacing:.18em;margin:0 0 6px}
+  .kicker{font-size:10px;letter-spacing:.34em;color:var(--parch-dim);text-transform:uppercase;margin-bottom:6px}
+  .rule{height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent);margin:18px 0 22px}
+  section{border:1px solid var(--line);background:rgba(0,0,0,.28);padding:16px 18px;margin-bottom:14px}
+  h2{font-size:15px;color:var(--gold);letter-spacing:.12em;margin:0 0 10px;font-weight:600}
+  p,li{font-size:13px;line-height:1.85;color:#cbb995}
+  ul{margin:6px 0;padding-left:20px}
+  b{color:var(--gold-bright);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 18px}
+  .k{display:inline-block;min-width:64px;color:var(--gold-bright);font-family:var(--en);letter-spacing:.06em}
+  .back{
+    display:inline-block;margin-top:8px;padding:9px 18px;border:1px solid var(--line);
+    color:var(--gold-bright);text-decoration:none;letter-spacing:.18em;font-size:12px;
+    transition:.2s ease;background:rgba(0,0,0,.3)
+  }
+  .back:hover{border-color:var(--gold);color:#fff3cf;background:rgba(216,179,99,.12)}
+  .tip{font-size:12px;color:var(--parch-dim)}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="kicker">Iron &amp; Crown · Field Manual</div>
+  <h1>操作手册</h1>
+  <p class="tip">一分钟看懂全部机制。实战中随时可按 <b>P</b> 暂停，再回来翻这一页。</p>
+  <div class="rule"></div>
+
+  <section>
+    <h2>一、开局三步</h2>
+    <ul>
+      <li>选中<b>基地车</b> → 部署为<b>主堡</b>（主堡会自动射箭，也是存金点）</li>
+      <li>主堡出兵种页造<b>农民</b>，农民点金矿采集，采满自动回主堡卸货</li>
+      <li>建造页盖<b>农舍</b>（+6 人口）、<b>兵营</b>（长矛/剑士/弓手）、<b>车厂</b>（攻城器械）</li>
+    </ul>
+    <p class="tip">建造是两段式：先排队「备料」，卡片变亮后再点一次进入放置模式，点地面落地。</p>
+  </section>
+
+  <section>
+    <h2>二、民心 / 信仰（相当于「电厂」）</h2>
+    <ul>
+      <li>军事建筑<b>消耗</b>民心：箭塔 2、弩炮塔 3、兵营 2、车厂 3、超武建筑 5</li>
+      <li>主堡 +2、圣泉 +4、大教堂 +8</li>
+      <li>不足时<b>只减速不停摆</b>：射速 50%、训练 80%、超武冷却 70%（按缺口线性衰减）</li>
+      <li>顶栏金币旁的民心条：绿=满速，黄=吃紧，红闪=严重不足</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>三、阵营与遭遇战</h2>
+    <ul>
+      <li>三阵营：<b>赤蔷薇</b>（天火）、<b>青杉</b>（雷霆）、<b>黑鸦</b>（瘟疫），超武与专属单位不同</li>
+      <li>遭遇战设置里可编排 4 个槽位：控制方（玩家/电脑/空）、阵营、队伍编号；预设 <b>1v1 / 1v2 / 2v2</b></li>
+      <li>同队伍编号 = 盟友；空槽位队伍编号固定为 null</li>
+      <li><b>AI 性格</b>：经典（原版节奏）/ 战术（蔷薇正面推进、青杉防守反击、黑鸦多线骚扰）</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>四、地形（遭遇战）</h2>
+    <div class="grid">
+      <div><b>高地</b>：远程单位与箭塔射程 +1</div>
+      <div><b>沼泽</b>：移速 -20%，重甲（骑士/冲车/攻城车）-40%</div>
+      <div><b>灰烬</b>：伤害 +10%，但每秒 -1 生命（不会烧死）</div>
+      <div><b>王座</b>：占据中央金阵，全军每 5 秒回 2 点生命</div>
+    </div>
+    <p class="tip">选中单位后把鼠标悬停在特殊地形上，光标旁会显示该地形的效果标签。</p>
+  </section>
+
+  <section>
+    <h2>五、盟友与多线</h2>
+    <ul>
+      <li>盟友与你的<b>视野共享</b>，迷雾按友方队伍合并</li>
+      <li>按 <b>Y</b>（或顶部旗帜按钮）在光标处打出<b>求援标记</b>，盟友若有余力会派一小队赶来</li>
+      <li>队友的 AOE 不会误伤你，反之亦然</li>
+      <li>你的主堡被拆但盟友还在时会转入<b>观战</b>，盟友取胜你也算赢</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>六、特殊单位</h2>
+    <ul>
+      <li><b>狂信徒</b>（黑鸦）：冲向目标自爆，范围伤害</li>
+      <li><b>密探</b>（青杉）：潜行偷取敌方金币，被发现会被围攻</li>
+      <li><b>狮心英雄</b>：大教堂解锁，血量与伤害都远高于普通兵</li>
+      <li><b>民兵征召</b>：V 键原地把农民临时变成战斗单位，20 秒后复原</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>七、快捷键</h2>
+    <div class="grid">
+      <div><span class="k">左键</span>选择 / 移动 / 攻击</div>
+      <div><span class="k">右键</span>攻击移动 / 取消</div>
+      <div><span class="k">Shift</span>追加选择</div>
+      <div><span class="k">Q</span>攻击移动</div>
+      <div><span class="k">T</span>强制攻击</div>
+      <div><span class="k">E</span>停止</div>
+      <div><span class="k">F</span>全选部队</div>
+      <div><span class="k">H</span>回到主堡</div>
+      <div><span class="k">Y</span>请求盟友支援</div>
+      <div><span class="k">Z/X/C/B/V</span>切换建造/兵种/工事/车厂/科技页</div>
+      <div><span class="k">Ctrl/Alt+1~9</span>编队 / 呼叫编队</div>
+      <div><span class="k">P</span>暂停</div>
+      <div><span class="k">M</span>静音</div>
+      <div><span class="k">Esc</span>取消当前操作</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>八、版本速览</h2>
+    <ul>
+      <li><b>1.7</b> 手机网页版：触屏点选、底部指令栏、局域网访问</li>
+      <li><b>1.8</b> 遭遇战升级：阵营自定义槽位、多出生点、小地图分队伍配色</li>
+      <li><b>1.9</b> 地形战术：高地 / 沼泽 / 灰烬 / 王座</li>
+      <li><b>2.0</b> AI 性格差异化；沼泽图可炸桥梁；黑鸦保底编成</li>
+      <li><b>2.1</b> 打磨与平衡：内存无泄漏、操作手册、动画过渡</li>
+    </ul>
+    <p class="tip">开发者：地址加 <b>?dev=1</b> 后按 <b>反引号</b> 可唤出调试面板（金币/民心/无敌/秒杀/刷兵/时间流速）。</p>
+  </section>
+
+  <a class="back" href="index.html">← 返回序章</a>
+</div>
+</body>
+</html>

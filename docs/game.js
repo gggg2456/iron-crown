@@ -1638,7 +1638,7 @@ function resetWorld() {
   seed = seeded(0x51C0FFEE + S.diffKey.length * 7717 + S.campaignLevel * 104729);
   refreshUnlocked();
   S.units = []; S.buildings = []; S.goldNodes = []; S.trees = []; S.props = [];
-  S.projs = []; S.particles = []; S.floats = []; S.superFx = [];
+  S.projs = []; S.particles = []; S.floats = []; S.superFx = []; S.corpses = [];
   S.selected = []; S.selectedBuilding = null; S.inspect = null;
   S.groups = {};
   Voice.stopAll();
@@ -3027,6 +3027,10 @@ function kill(target) {
   target.dead = true;
   if (target.kind === 'unit') {
     S.units = S.units.filter(u => u !== target);
+    if (S.corpses && S.corpses.length < 80) {
+      S.corpses.push({ x: target.x, y: target.y, type: target.type, team: target.team,
+        facing: target.facing || 1, t0: S.time });
+    }
     if (target.team === PLAYER) S.stats.losses++;
     if (target.team === PLAYER && target.type === 'peasant' && S.smartStats) S.smartStats.peasantKills++;
     else if (target.team === ENEMY) S.stats.kills++;
@@ -4368,6 +4372,7 @@ function update(dt) {
   S.enemyChest = Math.min(900, (S.enemyChest === undefined ? 600 : S.enemyChest) + dt * 1.2);
   if (!S.faithT || S.time >= S.faithT) { S.faithT = (S.time || 0) + .5; faithRefresh(); }
   updateTerrain(dt);
+  if (S.corpses && S.corpses.length) S.corpses = S.corpses.filter(c => S.time - c.t0 < .9);
   if (!S.aiTraceT || S.time >= S.aiTraceT) {
     S.aiTraceT = (S.time || 0) + 10;
     if (S.aiTrace.length < 40) S.aiTrace.push({ t: Math.round(S.time), u: S.units.filter(x => x.team === ENEMY).length });
@@ -5403,14 +5408,39 @@ function drawBaseVehicle(u, now) {
   roundRect(ctx, -6, -43, 12, 7, 2); ctx.fill();
   banner(ctx, 18, -44, c.cloth, c.trim, now + u.phase, 11);
 }
+/* 阵亡倒地：0.9 秒内下沉并淡出，替代原来的瞬间消失 */
+function drawCorpses() {
+  if (!S.corpses || !S.corpses.length) return;
+  for (const c of S.corpses) {
+    const k = Math.min(1, (S.time - c.t0) / .9);
+    const p = mapPos(c.x, c.y);
+    ctx.save();
+    ctx.globalAlpha = (1 - k) * .75;
+    ctx.translate(p.x, p.y + k * 3);
+    ctx.scale(c.facing || 1, 1);
+    ctx.rotate((Math.PI / 2.4) * Math.min(1, k * 1.6));   // tips over as it falls
+    const col = teamColors(c.team);
+    ctx.fillStyle = col.body || col.unit || '#8a7b5f';
+    ctx.beginPath();
+    ctx.ellipse(0, -3, 3.2, 8, 0, 0, 7);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 1, 7, 2.6, 0, 0, 7);
+    ctx.fill();
+    ctx.restore();
+  }
+}
 function drawUnit(u, now) {
   if (u.garrisoned) return;
   const p = mapPos(u.x, u.y);
   ctx.save(); ctx.translate(p.x, p.y);
   ctx.scale(u.facing, 1);
   const moving = u.moving;
-  const swing = moving ? Math.sin(now * 10 + u.phase) * 2.5 : 0;
-  const bob = moving ? Math.abs(Math.sin(now * 10 + u.phase)) * 1.2 : 0;
+  const swing = moving ? Math.sin(now * 10 + u.phase) * 3.2 : Math.sin(now * 1.6 + u.phase) * 0.6;
+  const bob = moving
+    ? Math.abs(Math.sin(now * 10 + u.phase)) * 1.7
+    : Math.sin(now * 1.6 + u.phase) * 0.35;          // idle breathing
   const c = teamColors(u.team);
   const siege = u.type === 'ram' || u.type === 'catapult' || u.type === 'scorpion';
   const baseVehicle = u.type === 'baseVehicle';
@@ -5899,6 +5929,7 @@ function render(now) {
   drawProjectiles();
   drawParticles();
   drawTerrainFx();
+  drawCorpses();
   drawHelpMark();
   drawFog();
   // selection rectangle
@@ -7814,6 +7845,27 @@ if (params.get('dev') === '1') (function initDevConsole() {
   for (const v of [1, 2, 5]) { const o = document.createElement('option'); o.value = v; o.textContent = v + 'x'; sel.appendChild(o); }
   sel.addEventListener('change', () => { S.devSpeed = parseFloat(sel.value) || 1; });
   r3.appendChild(lab); r3.appendChild(sel);
+
+  const rFill = row();
+  btn(rFill, '一键铺满测试环境', () => {
+    S.gold += 50000;
+    S.devFaithBonus = (S.devFaithBonus || 0) + 100;
+    S.revealAll = true;
+    if (fogBox) fogBox.checked = true;
+    faithRefresh();
+    const keep = S.buildings.find(b => b.team === 'player' && b.type === 'keep');
+    const cx = keep ? keep.x : 9.65, cy = keep ? keep.y : 36.35;
+    const squad = ['knight', 'knight', 'swordsman', 'swordsman', 'archer', 'archer',
+                   'crossbowman', 'crossbowman', 'catapult', 'peasant', 'peasant'];
+    squad.forEach((type, i) => {
+      if (!U[type]) return;
+      const a = (i / squad.length) * Math.PI * 2;
+      const u = addUnit(type, PLAYER, cx + Math.cos(a) * 3.4, cy + 2.2 + Math.sin(a) * 2.2);
+      u.order = { type: 'move', x: cx + Math.cos(a) * 5.5, y: cy + 4.2 + Math.sin(a) * 3.2 };
+    });
+    updateHud(true);
+    toast('测试环境已就绪：5 万金 / +100 民心 / 全图视野 / 满编小队', '', 'hero');
+  });
 
   const r4 = row();
   btn(r4, '秒杀全图（清屏）', () => {

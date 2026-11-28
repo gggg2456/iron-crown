@@ -29,7 +29,7 @@ if (Test-Path -LiteralPath $docs) {
 }
 New-Item -ItemType Directory -Path $docs | Out-Null
 
-foreach ($f in @('game.js', 'style.css', 'iron-crown.ico')) {
+foreach ($f in @('game.js', 'style.css', 'iron-crown.ico', 'intro.html', 'manual.html')) {
   Copy-Item -LiteralPath (Join-Path $web $f) -Destination $docs
 }
 Copy-Item -LiteralPath (Join-Path $web 'audio') -Destination (Join-Path $docs 'audio') -Recurse
