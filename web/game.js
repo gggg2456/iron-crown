@@ -1497,7 +1497,7 @@ function resetWorld() {
   S.buildQ = { cur: null, queue: [] };
   S.faith = { prod: 0, cost: 0, ratio: 1, gap: 0 }; S.faithT = 0;
   S.enemyChest = 600;
-  S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.aiPrimary = null; S.radar = false;
+  S.tech = {}; S.superCd = 0; S.superKey = null; S.superAim = false; S.forceAim = false; S.aiPrimary = null; S.radar = false; S.helpMark = null;
   S.stats = { kills: 0, losses: 0, gathered: 0 };
   const L = currentLevel();
   S.faction = (S.run === 'skirmish' && S.skirmish && FACTIONS[S.skirmish.faction]) ? S.skirmish.faction : 'rose';
@@ -3783,6 +3783,24 @@ class AIPlayer {
         floatText(u.x, u.y, '盟军援兵', '#9de0bd');
       }
     }
+    // 求援：不在苦战时，派一小队闲置兵力赶去标记点
+    const mark = S.helpMark;
+    if (mark && !mark.done && S.time - mark.t < HELP.life) {
+      const idle = S.units.filter(u => u.team === ALLY && u.hp > 0 && !u.garrisoned
+        && !u.target && !u.order && u.type !== 'peasant' && u.type !== 'baseVehicle');
+      const engaged = S.units.filter(u => u.team === ALLY && u.hp > 0 && u.target).length;
+      if (engaged <= 1 && idle.length >= HELP.minIdle) {
+        idle.sort((a, b) => Math.hypot(a.x - mark.x, a.y - mark.y) - Math.hypot(b.x - mark.x, b.y - mark.y));
+        for (const u of idle.slice(0, Math.min(HELP.squad, idle.length))) {
+          u.order = { type: 'attackMove', x: mark.x + rnd(-1.5, 1.5), y: mark.y + rnd(-1.5, 1.5) };
+          u.target = null;
+        }
+        mark.done = true;
+        floatText(mark.x, mark.y - 1, '盟军驰援', '#9de0bd');
+        toast('盟军回应求援，正在赶往标记点', '', 'shield');
+        Sound.play('hornlow');
+      }
+    }
     this.orderTimer -= dt;
     if (this.orderTimer > 0) return;
     this.orderTimer = 5;
@@ -4585,6 +4603,11 @@ function grantCrate(c) {
 }
 function nearestCrate(u, radius) {
   let best = null, bd = Infinity;
+  if (S.helpMark && S.time - S.helpMark.t < HELP.life) {
+    const p = miniPoint(S.helpMark.x, S.helpMark.y);
+    mctx.strokeStyle = 'rgba(157,224,189,.95)'; mctx.lineWidth = 2;
+    mctx.beginPath(); mctx.arc(p.x, p.y, 5, 0, 7); mctx.stroke();
+  }
   for (const c of S.crates) {
     const d = Math.hypot(u.x - c.x, u.y - c.y);
     if (d > radius || d >= bd) continue;
@@ -5284,6 +5307,8 @@ function drawParticles() {
 function visionRadiusOf(o) {
   return o.kind === 'building' ? (VISION_B[o.type] || 8) : (VISION_U[o.type] || 6.5);
 }
+/* Fog is shared across the friendly team: every player *and ally* unit/building
+   contributes vision, so an ally's scouting lights the player's map and vice versa. */
 function playerVisionSources() {
   const out = [];
   for (const u of S.units) {
@@ -5391,6 +5416,7 @@ function render(now) {
   drawSuperFx();
   drawProjectiles();
   drawParticles();
+  drawHelpMark();
   drawFog();
   // selection rectangle
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -5400,6 +5426,44 @@ function render(now) {
     ctx.fillStyle = 'rgba(223,193,123,.08)'; ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = 'rgba(231,203,139,.7)'; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, w, h);
   }
+}
+
+/* ---- 求援标记（v1.5.2）---- */
+const HELP = { life: 25, minIdle: 3, squad: 4, cooldown: 12 };
+function requestSupport() {
+  if (S.mode !== 'playing') return;
+  if (!S.aiAlly) { toast('本局没有盟友，无法请求支援', 'warn', 'shield'); return; }
+  if (S.helpMark && S.time - S.helpMark.t < HELP.cooldown) {
+    toast('求援信号刚发出，稍等片刻', 'warn', 'shield');
+    return;
+  }
+  const w = S.mouse.inside ? screenToWorld(S.mouse.x, S.mouse.y) : viewCenterWorld();
+  S.helpMark = { x: clamp(w.x, 0, MAP - 1), y: clamp(w.y, 0, MAP - 1), t: S.time, done: false };
+  floatText(S.helpMark.x, S.helpMark.y - 1, '求援信号', '#9de0bd');
+  toast('已发出求援信号：盟友若有余力会赶来', '', 'shield');
+  Sound.play('horn');
+}
+function viewCenterWorld() {
+  const c = viewCenter();
+  return screenToWorld(c.x, c.y);
+}
+function drawHelpMark() {
+  const m = S.helpMark;
+  if (!m || S.time - m.t > HELP.life) return;
+  const p = worldToScreen(m.x, m.y);
+  const age = S.time - m.t;
+  const pulse = .5 + .5 * Math.sin(age * 6);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - age / HELP.life) * (.55 + .35 * pulse);
+  ctx.strokeStyle = m.done ? 'rgba(157,224,189,.9)' : 'rgba(157,224,189,.65)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(p.x, p.y, 14 + pulse * 6, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = 'rgba(157,224,189,.9)';
+  ctx.font = '600 11px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('求援', p.x, p.y - 22);
+  ctx.restore();
 }
 
 /* ------------- UI ------------- */
@@ -5746,6 +5810,8 @@ function renderQueue() {
 }
 if (TOUCH_UI) document.body.classList.add('touch-ui');
 function updateHud(force = false) {
+  const helpBtn = document.getElementById('btn-help');
+  if (helpBtn) helpBtn.hidden = !S.aiAlly;
   if (!els.gold) return;
   const g = Math.floor(S.gold), p = popUsed(), cap = popCap(), a = armyCount();
   if (force || els.gold.textContent != g) els.gold.textContent = g;
@@ -6382,6 +6448,7 @@ function bindUI() {
     else if (btn.dataset.buildingAction === 'ungarrison') ungarrison(b);
   });
   $('#btn-sound').addEventListener('click', toggleMute);
+  $('#btn-help').addEventListener('click', () => requestSupport());
   $('#btn-pause').addEventListener('click', togglePause);
   $('#btn-exit')?.addEventListener('click', () => goMenu());
   $('#btn-quit')?.addEventListener('click', () => { hidePause(); goMenu(); });
@@ -6664,6 +6731,7 @@ function onKeyDown(e) {
   if (k === 'p') { togglePause(); return; }
   if (k === 'm') { toggleMute(); return; }
   if (k === 'e') { if (S.mode === 'playing' && !S.paused) stopSelected(); return; }
+  if (k === 'y') { if (!S.paused) requestSupport(); return; }
   if (k === 'escape') {
     if (S.forceAim) { S.forceAim = false; canvas.style.cursor = 'default'; return; }
     if (S.superAim) { S.superAim = false; canvas.style.cursor = 'default'; updateSuperUI(); return; }
@@ -6937,7 +7005,9 @@ window.IronCrown = {
   fog: fogCanvas,
   // automation / debugging: drive the real death rules (spectate, team victory)
   kill: (t) => kill(t),
-  spectate: () => enterSpectate()
+  spectate: () => enterSpectate(),
+  superAt: (key, x, y, team) => applySuperAt(key, x, y, team),
+  requestSupport: () => requestSupport()
 };
 
 const params = new URLSearchParams(location.search);

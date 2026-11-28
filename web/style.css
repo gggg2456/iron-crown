@@ -623,3 +623,7 @@ body.touch-ui .sel-actions { gap: 6px; flex-wrap: wrap; }
 @media (max-width: 560px) {
   .slot-row { grid-template-columns: 34px 1fr 1fr 46px; }
 }
+/* ---- 求援按钮（v1.5.2）---- */
+.help-btn { color: #9de0bd; }
+.help-btn:hover { color: #c7ffe4; }
+body.touch-ui .help-btn { display: flex; }
