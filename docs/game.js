@@ -1,4 +1,4 @@
-/* 铁与王冠 · 简易中世纪 RTS
+﻿/* 铁与王冠 · 简易中世纪 RTS
    采金、造兵、建塔、守住主堡并摧毁黑鸦主堡。 */
 (() => {
 'use strict';
@@ -2401,9 +2401,15 @@ function bfsFreeTile(tx, ty, r, maxR) {
 function unstickUnitAt(unit, sx, sy, r) {
   if (!unit) return { x: sx, y: sy };
   const tx = Math.floor(sx), ty = Math.floor(sy);
-  if (!blockedAt(sx, sy, unit) && !narrowSlitAt(tx, ty, r)) return { x: sx, y: sy };
+  // 只有「真的在建筑体内 / 水里 / 窄缝」才救：用半径余量判定会把贴墙也当成卡住，
+  // 于是每次寻路都传送一次，stuckTeleports 会飙到四位数。
+  const buried = terrainAt(sx, sy) === 'water' || insideBuildingAt(sx, sy, .01)
+    || narrowSlitAt(tx, ty, Math.min(r, .05));
+  if (!buried) return { x: sx, y: sy };
+  if (unit && S.time - (unit.lastEscape || -9) < 1.0) return { x: sx, y: sy };
   const free = bfsFreeTile(tx, ty, r, 5);
   if (!free) return { x: sx, y: sy };
+  if (unit) unit.lastEscape = S.time;
   pushStuckLog(unit, free, [sx, sy]);
   unit.x = free.x; unit.y = free.y;
   unit.path = null; unit.pathGoal = null;
@@ -2422,15 +2428,20 @@ function insideBuildingAt(x, y, pad = .01) {
 function trulyStuck(u) {
   if (!u) return false;
   if (terrainAt(u.x, u.y) === 'water') return true;
-  if (insideBuildingAt(u.x, u.y, .01)) return true;
-  return narrowSlitAt(Math.floor(u.x), Math.floor(u.y), .05);
+  return insideBuildingAt(u.x, u.y, .01);
+}
+/* 站进「只能进不能出」的窄缝也算需要救援，但这条只在 2 秒规则里用：
+   密集建筑群里正常站位常常就落在 1 格缝里，逐帧判定会疯狂来回传送。 */
+function slitStuck(u) {
+  if (!u) return false;
+  return trulyStuck(u) || narrowSlitAt(Math.floor(u.x), Math.floor(u.y), .05);
 }
 /* 兜底不变式：任何时刻，单位都不允许停在阻挡格上。
    一旦发现（分离力、推挤、建筑落成都可能造成），立刻送到最近的空地。 */
 function ensureNotBlocked(u) {
   if (!u || u.hp <= 0 || u.garrisoned) return false;
   if (!trulyStuck(u)) return false;
-  if (S.time - (u.lastEscape || -9) < .2) return false;   // 防抖，避免同一帧反复传送
+  if (S.time - (u.lastEscape || -9) < 1.0) return false;   // 防抖：同一单位 1 秒内只救一次
   const free = bfsFreeTile(Math.floor(u.x), Math.floor(u.y), unitRadius(u), 6)
     || nearestFreeSpot(u.x, u.y, 8, unitRadius(u));
   if (!free) return false;
@@ -2862,9 +2873,18 @@ function updateUnit(u, dt) {
     u.stuckAnchor = { x: u.x, y: u.y, t: 0 };
   }
   // 强制位移：2 秒没动且脚下是阻挡格 -> 无视碰撞，直接送到空地
-  if ((u.stillT || 0) >= 2 && trulyStuck(u)) {
+  if ((u.stillT || 0) >= 2 && slitStuck(u)) {
     u.stillT = 0;
-    ensureNotBlocked(u);
+    if (trulyStuck(u)) { ensureNotBlocked(u); }
+    else {
+      const free = bfsFreeTile(Math.floor(u.x), Math.floor(u.y), unitRadius(u), 6);
+      if (free && S.time - (u.lastEscape || -9) > 1.2) {
+        u.lastEscape = S.time;
+        pushStuckLog(u, free);
+        u.x = free.x; u.y = free.y; u.path = null; u.pathGoal = null;
+        S.stuckTeleports = (S.stuckTeleports || 0) + 1;
+      }
+    }
   } else if ((u.stillT || 0) >= 3) {
     u.stillT = 0;
     const free = nearestFreeSpot(u.x, u.y, 5, unitRadius(u));
@@ -7093,18 +7113,18 @@ function resize() {
   clampCamera();
 }
 function bindUI() {
-  $('#btn-start').addEventListener('click', startGame);
-  $$('.diff-option').forEach(b => b.addEventListener('click', () => {
+  $('#btn-start').addEventListener('pointerdown', startGame);
+  $$('.diff-option').forEach(b => b.addEventListener('pointerdown', () => {
     S.diffKey = b.dataset.diff;
     $$('.diff-option').forEach(x => x.classList.toggle('active', x === b));
     Sound.play('ui');
   }));
-  $('#ally-toggle')?.addEventListener('click', e => {
+  $('#ally-toggle')?.addEventListener('pointerdown', e => {
     e.currentTarget.classList.toggle('active');
     S.allyEnabled = e.currentTarget.classList.contains('active');
     Sound.play('ui');
   });
-  $$('#mode-tabs .mode-tab').forEach(btn => btn.addEventListener('click', () => {
+  $$('#mode-tabs .mode-tab').forEach(btn => btn.addEventListener('pointerdown', () => {
     const mode = btn.dataset.mode;
     S.tutorial = mode === 'tutorial';
     S.run = (mode === 'skirmish' || mode === 'tutorial') ? 'skirmish' : 'campaign';
@@ -7114,41 +7134,41 @@ function bindUI() {
     syncStartUI();
     Sound.play('ui');
   }));
-  $$('#sk-gold button').forEach(btn => btn.addEventListener('click', () => {
+  $$('#sk-gold button').forEach(btn => btn.addEventListener('pointerdown', () => {
     if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
     S.skirmish.gold = parseInt(btn.dataset.gold, 10);
     $$('#sk-gold button').forEach(b => b.classList.toggle('active', b === btn));
     updateCampaignUI();
     Sound.play('ui');
   }));
-  $$('#sk-presets button').forEach(btn => btn.addEventListener('click', () => applyPreset(btn.dataset.preset)));
-  $$('#sk-aipersonality button').forEach(btn => btn.addEventListener('click', () => {
+  $$('#sk-presets button').forEach(btn => btn.addEventListener('pointerdown', () => applyPreset(btn.dataset.preset)));
+  $$('#sk-aipersonality button').forEach(btn => btn.addEventListener('pointerdown', () => {
     S.aiPersonality = btn.dataset.personality === 'smart' ? 'smart' : 'classic';
     $$('#sk-aipersonality button').forEach(b => b.classList.toggle('active', b === btn));
     Sound.play('ui');
   }));
-  $$('#sk-inf button').forEach(btn => btn.addEventListener('click', () => {
+  $$('#sk-inf button').forEach(btn => btn.addEventListener('pointerdown', () => {
     if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
     S.skirmish.inf = parseInt(btn.dataset.inf, 10);
     $$('#sk-inf button').forEach(b => b.classList.toggle('active', b === btn));
     updateCampaignUI();
     Sound.play('ui');
   }));
-  $$('#sk-faction button').forEach(btn => btn.addEventListener('click', () => {
+  $$('#sk-faction button').forEach(btn => btn.addEventListener('pointerdown', () => {
     if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
     S.skirmish.faction = btn.dataset.faction;
     $$('#sk-faction button').forEach(b => b.classList.toggle('active', b === btn));
     updateCampaignUI();
     Sound.play('ui');
   }));
-  $$('#sk-map button').forEach(btn => btn.addEventListener('click', () => {
+  $$('#sk-map button').forEach(btn => btn.addEventListener('pointerdown', () => {
     if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
     S.skirmish.map = btn.dataset.map;
     $$('#sk-map button').forEach(b => b.classList.toggle('active', b === btn));
     updateCampaignUI();
     Sound.play('ui');
   }));
-  $('#sk-super')?.addEventListener('click', e => {
+  $('#sk-super')?.addEventListener('pointerdown', e => {
     if (!S.skirmish) S.skirmish = { gold: 2000, inf: 4, supers: true };
     S.skirmish.supers = !S.skirmish.supers;
     e.currentTarget.classList.toggle('active', S.skirmish.supers);
@@ -7765,6 +7785,7 @@ window.IronCrown = {
   visible: (x, y) => isVisibleToPlayer(x, y),
   canPlace: (type, tx, ty, opts) => canPlace(type, tx, ty, opts),
   deployBase: (u) => deployBaseVehicle(u),
+  soundState: () => (Sound.ac ? Sound.ac.state : 'none'),
   fog: fogCanvas,
   // automation / debugging: drive the real death rules (spectate, team victory)
   kill: (t) => kill(t),
@@ -8107,7 +8128,7 @@ if (params.get('dev') === '1') (function initDevConsole() {
   const stage = document.getElementById('faction-stage');
   const screen = document.getElementById('start-screen');
   if (!bg || !screen) return;
-  const bctx = bg.getContext('2d');
+  const bctx = bg.getContext('2d', { alpha: false });
   const sctx = stage ? stage.getContext('2d') : null;
 
   const FACTION_ART = {
@@ -8133,8 +8154,10 @@ if (params.get('dev') === '1') (function initDevConsole() {
   }
 
   let W = 1, H = 1, dpr = 1;
+  // 背景只有雾和网格，半分辨率渲染再拉伸几乎看不出差别，像素量却降到 1/4
+  const BG_SCALE = .45;
   function resize() {
-    dpr = Math.min(1.25, window.devicePixelRatio || 1);
+    dpr = BG_SCALE;
     W = bg.clientWidth || window.innerWidth;
     H = bg.clientHeight || window.innerHeight;
     bg.width = Math.max(1, Math.round(W * dpr));
@@ -8145,16 +8168,28 @@ if (params.get('dev') === '1') (function initDevConsole() {
   resize();
 
   const embers = [];
-  for (let i = 0; i < 34; i++) {
+  for (let i = 0; i < 26; i++) {
     embers.push({ x: Math.random(), y: Math.random(), s: .5 + Math.random() * 1.4,
       vy: .012 + Math.random() * .03, drift: Math.random() * 6.28, a: .25 + Math.random() * .5 });
   }
   const fogs = [];
-  for (let i = 0; i < 5; i++) {
-    fogs.push({ x: Math.random(), y: .15 + Math.random() * .7, r: .18 + Math.random() * .22,
-      vx: (.004 + Math.random() * .008) * (Math.random() < .5 ? -1 : 1), a: .05 + Math.random() * .06 });
+  for (let i = 0; i < 3; i++) {
+    fogs.push({ x: Math.random(), y: .2 + Math.random() * .6, r: .14 + Math.random() * .1,
+      vx: (.004 + Math.random() * .008) * (Math.random() < .5 ? -1 : 1), a: .05 + Math.random() * .05 });
   }
   let meteor = null, meteorIn = 2.5 + Math.random() * 4;
+
+  // AudioContext 在启动时就建好（此时可能 suspended），首次交互立刻 resume，
+  // 这样第一次点击的声音不会因为「创建上下文」而迟到。
+  try { Sound.init(); } catch (_) {}
+  const unlock = () => {
+    try {
+      Sound.init();
+      if (Sound.ac && Sound.ac.state === 'suspended') Sound.ac.resume().catch(() => {});
+    } catch (_) {}
+  };
+  window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
+  window.addEventListener('keydown', unlock, { capture: true, passive: true });
 
   const HOVER_SEL = '#start-screen button, #start-screen .cfg-toggle, #start-screen .ally-toggle';
   let actx = null, lastBlip = 0;
@@ -8180,8 +8215,18 @@ if (params.get('dev') === '1') (function initDevConsole() {
     } catch (_) {}
   }
   screen.addEventListener('pointerover', e => {
-    if (e.target.closest && e.target.closest(HOVER_SEL)) hoverBlip();
+    const el = e.target.closest && e.target.closest(HOVER_SEL);
+    if (!el) return;
+    hoverBlip();
+    spawnEdgeSparks(el);          // 悬停时按钮边缘蹦出的金色火星
   });
+  screen.addEventListener('pointerdown', e => {
+    const el = e.target.closest && e.target.closest(HOVER_SEL);
+    if (!el) return;
+    unlock();
+    clickBurst(e.clientX, e.clientY);
+    shakeScreen();
+  }, { capture: true });
 
   function drawGrid(t, faction) {
     const shift = (t * 14) % 64;
@@ -8294,9 +8339,7 @@ if (params.get('dev') === '1') (function initDevConsole() {
     cloth.addColorStop(.5, art.cloth + 'dd');
     cloth.addColorStop(1, '#12100c');
     sctx.fillStyle = cloth;
-    sctx.shadowColor = art.cloth; sctx.shadowBlur = 18;
     sctx.fill();
-    sctx.shadowBlur = 0;
     sctx.strokeStyle = art.trim; sctx.lineWidth = 1.6; sctx.globalAlpha = .8;
     sctx.stroke();
     sctx.globalAlpha = 1;
@@ -8347,28 +8390,205 @@ if (params.get('dev') === '1') (function initDevConsole() {
     sctx.globalAlpha = 1;
   }
 
+  /* ---- 静态层缓存：天空渐变与两种网格线各预渲染一次，每帧只做 pattern 平铺 ---- */
+  const skyCache = document.createElement('canvas');
+  const gridDiag = document.createElement('canvas');
+  const gridShallow = document.createElement('canvas');
+  const fogBlob = document.createElement('canvas');
+  (function bakeStatic() {
+    gridDiag.width = 64; gridDiag.height = 64;
+    const g1 = gridDiag.getContext('2d');
+    g1.strokeStyle = 'rgba(196,161,96,.55)'; g1.lineWidth = 1;
+    g1.beginPath(); g1.moveTo(0, 0); g1.lineTo(64, 64); g1.stroke();
+    g1.beginPath(); g1.moveTo(0, 64); g1.lineTo(64, 128); g1.stroke();
+
+    gridShallow.width = 64; gridShallow.height = 32;
+    const g2 = gridShallow.getContext('2d');
+    g2.strokeStyle = 'rgba(196,161,96,.55)'; g2.lineWidth = 1;
+    g2.beginPath(); g2.moveTo(0, 16); g2.lineTo(64, 48); g2.stroke();
+
+    fogBlob.width = 256; fogBlob.height = 256;
+    const fg = fogBlob.getContext('2d');
+    const rg = fg.createRadialGradient(128, 128, 6, 128, 128, 128);
+    rg.addColorStop(0, 'rgba(150,160,140,1)');
+    rg.addColorStop(.55, 'rgba(110,120,105,.5)');
+    rg.addColorStop(1, 'rgba(80,90,80,0)');
+    fg.fillStyle = rg;
+    fg.fillRect(0, 0, 256, 256);
+  })();
+  let skyReady = false;
+  function bakeSky() {
+    skyCache.width = bg.width; skyCache.height = bg.height;
+    const sc = skyCache.getContext('2d');
+    sc.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const sky = sc.createLinearGradient(0, 0, W * .4, H);
+    sky.addColorStop(0, '#0a0b08');
+    sky.addColorStop(.55, '#0d0f0a');
+    sky.addColorStop(1, '#070806');
+    sc.fillStyle = sky;
+    sc.fillRect(0, 0, W, H);
+    skyReady = true;
+  }
+  const oldResize = resize;
+  resize = function () {
+    oldResize();
+    bakeSky();
+  };
+  window.removeEventListener('resize', oldResize);   // 换成带天空重烘焙的新版本
+  window.addEventListener('resize', resize);
+  resize();
+
+  let patDiag = null, patShallow = null, patFog = null;
+  function ensurePatterns() {
+    if (!patDiag) patDiag = bctx.createPattern(gridDiag, 'repeat');
+    if (!patShallow) patShallow = bctx.createPattern(gridShallow, 'repeat');
+    if (!patFog) patFog = bctx.createPattern(fogBlob, 'repeat');
+  }
+
+  /* ---- 粒子覆盖层（火星）：独立 canvas，pointer-events:none ---- */
+  // 只在一个跟手的 360×260 小画布上画火星：全屏覆盖层本身就要吃掉约 40fps
+  const fx = document.createElement('canvas');
+  fx.id = 'ui-fx';
+  fx.setAttribute('aria-hidden', 'true');
+  fx.style.display = 'none';
+  document.body.appendChild(fx);
+  const fxc = fx.getContext('2d');
+  const FXD = 2, FXW = 360, FXH = 260;
+  fx.width = FXW * FXD; fx.height = FXH * FXD;
+  fx.style.width = FXW + 'px'; fx.style.height = FXH + 'px';
+  fxc.setTransform(FXD, 0, 0, FXD, 0, 0);
+  let fxOx = 0, fxOy = 0;                     // 画布左上角在视口中的位置
+  function placeFx(cx, cy) {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    fxOx = Math.max(0, Math.min(vw - FXW, Math.round(cx - FXW / 2)));
+    fxOy = Math.max(0, Math.min(vh - FXH, Math.round(cy - FXH / 2)));
+    fx.style.left = fxOx + 'px';
+    fx.style.top = fxOy + 'px';
+  }
+  placeFx(window.innerWidth / 2, window.innerHeight / 2);
+  const sparks = [];
+  function pushSpark(x, y, ang, spd, life, size, tone) {
+    if (sparks.length > 160) sparks.shift();
+    // 若爆点跑出当前小画布，就整体搬过去（旧火星已很淡，直接丢弃）
+    if (x < fxOx + 10 || x > fxOx + FXW - 10 || y < fxOy + 10 || y > fxOy + FXH - 10) {
+      sparks.length = 0;
+      placeFx(x, y);
+      fxc.clearRect(0, 0, FXW, FXH);
+    }
+    sparks.push({ x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - .35,
+      life, t: 0, size, tone });
+    fx.style.display = 'block';
+  }
+  function spawnEdgeSparks(el) {
+    const r = el.getBoundingClientRect();
+    if (!r.width) return;
+    const n = 3;
+    for (let i = 0; i < n; i++) {
+      const edge = Math.floor(Math.random() * 4);
+      const x = edge === 0 ? r.left : edge === 1 ? r.right : r.left + Math.random() * r.width;
+      const y = edge === 2 ? r.top : edge === 3 ? r.bottom : r.top + Math.random() * r.height;
+      pushSpark(x, y, Math.random() * Math.PI * 2, .6 + Math.random() * 1.1, .45 + Math.random() * .3,
+        1 + Math.random() * 1.4, '#f0c98a');
+    }
+  }
+  function clickBurst(x, y) {
+    for (let i = 0; i < 28; i++) {
+      const a = (i / 28) * Math.PI * 2 + Math.random() * .25;
+      pushSpark(x, y, a, 1.8 + Math.random() * 3.0, .45 + Math.random() * .4,
+        1.8 + Math.random() * 2.2, i % 3 ? '#ffe6b0' : '#f0783c');
+    }
+  }
+  function shakeScreen() {
+    screen.classList.remove('fx-shake');
+    void screen.offsetWidth;              // 重启动画
+    screen.classList.add('fx-shake');
+    clearTimeout(shakeScreen._t);
+    shakeScreen._t = setTimeout(() => screen.classList.remove('fx-shake'), 130);
+  }
+  function drawSparks(dt) {
+    if (!sparks.length) {
+      if (fx._dirty) {
+        fxc.clearRect(0, 0, FXW, FXH);
+        fx.style.display = 'none';      // 空闲时整层隐藏，零合成开销
+        fx._dirty = false;
+      }
+      return;
+    }
+    fx._dirty = true;
+    fxc.clearRect(0, 0, FXW, FXH);
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const p = sparks[i];
+      p.t += dt;
+      if (p.t >= p.life) { sparks.splice(i, 1); continue; }
+      p.vy += 2.6 * dt;
+      p.x += p.vx * 60 * dt;
+      p.y += p.vy * 60 * dt;
+      const k = 1 - p.t / p.life;
+      fxc.globalAlpha = k * .95;
+      fxc.fillStyle = p.tone;
+      const sz = Math.max(1, p.size * k);
+      fxc.fillRect(Math.round(p.x - fxOx), Math.round(p.y - fxOy), sz, sz);
+    }
+    fxc.globalAlpha = 1;
+  }
+
   let last = performance.now();
+  let stageClock = 0;
+  let bgClock = 1;          // 首帧立刻画一次背景
   function frame(now) {
     requestAnimationFrame(frame);
     const dt = Math.min(.05, (now - last) / 1000);
     last = now;
     const visible = document.body.classList.contains('menu-mode') && !screen.hidden;
-    if (!visible) return;                       // 进入对局后彻底不画
+    if (!visible) { drawSparks(dt); return; }   // 对局中：背景完全不画，只把残余火星收尾
+    // 背景层（天空/网格/云雾/余烬/流星）30fps 足够：都是缓慢移动的元素，
+    // 60fps 重画整屏要吃掉约 46fps，而火星与按钮动效仍保持 60fps。
+    bgClock += dt;
+    if (bgClock < 1 / 30) { drawSparks(dt); return; }
+    bgClock = 0;
+    ensurePatterns();
     const f = currentFaction();
     syncFaction(f);
     const t = now / 1000;
-    bctx.clearRect(0, 0, W, H);
-    const sky = bctx.createLinearGradient(0, 0, W * .4, H);
-    sky.addColorStop(0, '#0a0b08');
-    sky.addColorStop(.55, '#0d0f0a');
-    sky.addColorStop(1, '#070806');
-    bctx.fillStyle = sky;
-    bctx.fillRect(0, 0, W, H);
-    drawGrid(t, f);
-    drawFog(t);
+
+    // 天空：一次 drawImage
+    if (skyReady) bctx.drawImage(skyCache, 0, 0, W, H);
+    else { bctx.fillStyle = '#090a07'; bctx.fillRect(0, 0, W, H); }
+
+    // 网格：两次 pattern 填充代替上百条 stroke
+    const shift = (t * 14) % 64;
+    bctx.save();
+    bctx.globalAlpha = .16;
+    bctx.translate(-shift, -shift);
+    bctx.fillStyle = patDiag;
+    bctx.fillRect(0, 0, W + shift + 64, H + shift + 64);
+    bctx.restore();
+    bctx.save();
+    bctx.globalAlpha = .13;
+    const vShift = (t * 7) % 32;
+    bctx.translate(0, -vShift);
+    bctx.fillStyle = patShallow;
+    bctx.fillRect(0, 0, W, H + vShift + 32);
+    bctx.restore();
+
+    // 云雾：贴预渲染的 blob，不再每帧构造 radialGradient
+    for (const fog of fogs) {
+      const x = ((fog.x + t * fog.vx) % 1.4) * W - W * .2;
+      const y = fog.y * H;
+      const rr = fog.r * W;
+      bctx.globalAlpha = fog.a * 1.9;
+      bctx.drawImage(fogBlob, x - rr, y - rr, rr * 2, rr * 2);
+    }
+    bctx.globalAlpha = 1;
+
     drawMeteor(dt);
     drawEmbers(dt, t);
-    drawStage(t, f);
+    stageClock += dt;
+    if (stageClock >= 1 / 30) {          // 战旗 30fps 足够，省一半重绘
+      stageClock = 0;
+      drawStage(t, f);
+    }
+    drawSparks(dt);
   }
   requestAnimationFrame(frame);
 })();

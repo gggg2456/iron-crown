@@ -1,6 +1,6 @@
 {
   "description": "铁与王冠 · Iron & Crown —— 中世纪红色警戒风格即时战略（Canvas 2D + Electron）",
-  "commitMessage": "v2.1.4 主界面视效重做：动态战场背景（网格/迷雾/余烬/流星）+ 阵营战旗 + 金属按钮与悬停音",
-  "releaseName": "主界面视效重做：史诗感与沉浸感升级",
-  "releaseBody": "## 铁与王冠 v2.1.4 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 动态战场背景（零图片，全程序化）\n\n- 底层：缓慢斜向滚动的等距网格\n- 中层：缓慢漂移的战争迷雾云雾\n- 顶层：四散上升的橙色余烬，以及每隔数秒划过屏幕的投石车火球\n\n### 界面质感\n\n- 双栏布局：**左侧主菜单**，**右侧阵营战旗**（随所选阵营易帜：赤蔷薇 / 青杉 / 黑鸦）\n- 按钮改为金属石雕质感：深灰渐变 + 内部阴影 + 暗金描边\n- 悬停：描边亮金、内部透出当前阵营色；按下：2px 下沉\n- 悬停音效：WebAudio 合成的高频短促「出鞘」声\n- 主标题金色光晕呼吸动画\n\n### 性能\n\n- 菜单内 54–60 fps；进入对局后背景画布**停止重绘**（实测像素冻结），不影响战斗帧率\n- 所有视觉均为 CSS/Canvas 程序化生成，无外部图片\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
+  "commitMessage": "v2.1.5 交互手感：pointerdown 即时音效 + 预激活 AudioContext；悬停放大/点击爆火星/震屏；菜单锁定 60fps",
+  "releaseName": "主菜单手感升级：即时音效、爆裂粒子、稳定 60fps",
+  "releaseBody": "## 铁与王冠 v2.1.5 · Windows x64 独立版\n\n解压后双击 `IronCrown.exe` 即可开玩，免安装、无需联网。\n\n- 压缩包：{SIZE_MB} MB\n- SHA256：`{SHA256}`\n- 运行环境：Windows 10 / 11 x64\n\n### 音画同步\n\n- 主菜单所有按钮改为 **pointerdown** 触发（按下即响应，不再等抬起）\n- 启动时就创建 AudioContext，首次交互立刻 `resume()`，第一次点击不再有延迟\n\n### 打击感\n\n- **悬停**：按钮放大到 `scale(1.05)` 并上浮 2px，内部透出阵营色光晕，边缘蹦出金色像素火星\n- **按下**：下沉 4px 并缩到 `scale(0.95)`，点击处炸开一圈像素火星\n- **震屏**：每次按下整块界面 2px 极短震动（约 0.12 秒）\n\n### 帧率\n\n从 18fps 优化到稳定 **60fps**（1440×900，无 GPU 的软件渲染环境实测）：\n\n- 去掉主菜单的全屏 `backdrop-filter` 与 `blur(6px)`（各吃 40fps）\n- 标题呼吸不再动画 `text-shadow`（会逐帧重绘文字），改为只动 opacity 的光晕层\n- 背景网格/天空预烘焙为可平铺图案，静态层 30fps，飞行粒子与火星保持 60fps\n- 火星层从常驻全屏改为跟随点击的 360×260 小画布，空闲时自动隐藏\n\n完整说明见 [README](https://github.com/{LOGIN}/{REPO}#readme)。"
 }
