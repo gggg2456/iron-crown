@@ -1505,6 +1505,8 @@ function addBuilding(type, tx, ty, team, opts = {}) {
     dead: false
   };
   S.buildings.push(b);
+  // 建筑已经进入碰撞表，此时推人才能找到真正的空地
+  if (S.units && S.units.length) nudgeUnitsOut(tx, ty, d.w, d.d);
   if (team === ENEMY) {
     S.aiTimes = S.aiTimes || {};
     if (!S.aiTimes[type]) S.aiTimes[type] = Math.round(S.time);
@@ -2307,7 +2309,7 @@ function pushOutOfBuildings(u) {
     else { u.x = cands[0].x; u.y = cands[0].y; }
   }
   // 推完仍在阻挡格（用小容差判定，避免把「刚好贴边」误判成卡住）：直接弹到最近空地
-  if (walkBlocked(Math.floor(u.x), Math.floor(u.y), .05)) {
+  if (walkBlocked(Math.floor(u.x), Math.floor(u.y), .05) || narrowSlitAt(Math.floor(u.x), Math.floor(u.y), .05)) {
     const free = nearestFreeSpot(u.x, u.y, 5, .05);
     if (free) {
       pushStuckLog(u, free);
@@ -2374,7 +2376,75 @@ function lineBlocked(u, tx, ty) {
   return false;
 }
 // 网格 A*：绕开建筑与水面。失败返回 null，调用方回退到直线移动。
-function findPath(sx, sy, tx, ty, r) {
+/* 雏形：从某个被挡住的格子向外 BFS，找最近的可站立格（3-6 格内）。 */
+function bfsFreeTile(tx, ty, r, maxR) {
+  const limit = maxR === undefined ? 5 : maxR;
+  const seen = new Set([tx + ',' + ty]);
+  const q = [[tx, ty, 0]];
+  while (q.length) {
+    const [x, y, d] = q.shift();
+    if (x >= 0 && y >= 0 && x < MAP && y < MAP
+      && !walkBlocked(x, y, r) && !narrowSlitAt(x, y, r)) return { x: x + .5, y: y + .5 };
+    if (d >= limit) continue;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= MAP || ny >= MAP) continue;
+      const key = nx + ',' + ny;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      q.push([nx, ny, d + 1]);
+    }
+  }
+  return null;
+}
+/* 起点脱困：单位卡在阻挡格时，先瞬移到附近空地再寻路。 */
+function unstickUnitAt(unit, sx, sy, r) {
+  if (!unit) return { x: sx, y: sy };
+  const tx = Math.floor(sx), ty = Math.floor(sy);
+  if (!blockedAt(sx, sy, unit) && !narrowSlitAt(tx, ty, r)) return { x: sx, y: sy };
+  const free = bfsFreeTile(tx, ty, r, 5);
+  if (!free) return { x: sx, y: sy };
+  pushStuckLog(unit, free, [sx, sy]);
+  unit.x = free.x; unit.y = free.y;
+  unit.path = null; unit.pathGoal = null;
+  S.stuckTeleports = (S.stuckTeleports || 0) + 1;
+  return { x: unit.x, y: unit.y };
+}
+/* 真正卡住：中心已经在建筑体内，或整个格子不可站立（水/被建筑覆盖/窄缝）。
+   只是贴着墙皮（半径余量）不算，避免把正常贴墙当成卡死反复传送。 */
+function insideBuildingAt(x, y, pad = .01) {
+  for (const b of S.buildings) {
+    if (x > b.tx + pad && x < b.tx + b.w - pad
+      && y > b.ty + pad && y < b.ty + b.d - pad) return true;
+  }
+  return false;
+}
+function trulyStuck(u) {
+  if (!u) return false;
+  if (terrainAt(u.x, u.y) === 'water') return true;
+  if (insideBuildingAt(u.x, u.y, .01)) return true;
+  return narrowSlitAt(Math.floor(u.x), Math.floor(u.y), .05);
+}
+/* 兜底不变式：任何时刻，单位都不允许停在阻挡格上。
+   一旦发现（分离力、推挤、建筑落成都可能造成），立刻送到最近的空地。 */
+function ensureNotBlocked(u) {
+  if (!u || u.hp <= 0 || u.garrisoned) return false;
+  if (!trulyStuck(u)) return false;
+  if (S.time - (u.lastEscape || -9) < .2) return false;   // 防抖，避免同一帧反复传送
+  const free = bfsFreeTile(Math.floor(u.x), Math.floor(u.y), unitRadius(u), 6)
+    || nearestFreeSpot(u.x, u.y, 8, unitRadius(u));
+  if (!free) return false;
+  u.lastEscape = S.time;
+  pushStuckLog(u, free);
+  u.x = free.x; u.y = free.y;
+  u.path = null; u.pathGoal = null;
+  u.dbgBlocked = false;
+  S.stuckTeleports = (S.stuckTeleports || 0) + 1;
+  return true;
+}
+function findPath(sx, sy, tx, ty, r, unit) {
+  const started = unstickUnitAt(unit, sx, sy, r);
+  sx = started.x; sy = started.y;
   const W = MAP, N = W * W;
   const blocked = new Uint8Array(N);
   for (let y = 0; y < W; y++) {
@@ -2526,8 +2596,10 @@ function separateUnits() {
         if (fanatics.length && fanatics.some(f => !isFriendlyTeam(f.team, foe.team) && Math.hypot(f.x - foe.x, f.y - foe.y) < 2)) push *= 3;
       }
           const nx = dx / d, ny = dy / d;
-          a.x -= nx * push; a.y -= ny * push;
-          b.x += nx * push; b.y += ny * push;
+          const ax = a.x - nx * push, ay = a.y - ny * push;
+          const bx2 = b.x + nx * push, by2 = b.y + ny * push;
+          if (!blockedAt(ax, ay, a)) { a.x = ax; a.y = ay; }
+          if (!blockedAt(bx2, by2, b)) { b.x = bx2; b.y = by2; }
         }
       }
     }
@@ -2535,6 +2607,7 @@ function separateUnits() {
   for (const u of list) {
     u.x = clamp(u.x, .3, MAP - .3); u.y = clamp(u.y, .3, MAP - .3);
     pushOutOfBuildings(u);
+    ensureNotBlocked(u);      // 最终不变式：本帧结束时不允许有人卡在建筑/窄缝里
   }
 }
 function moveTowards(u, tx, ty, dt, stop = 0) {
@@ -2561,7 +2634,7 @@ function moveTowards(u, tx, ty, dt, stop = 0) {
       if (S.pathBudget > 0) {
         S.pathBudget--;
         S.perf.path++;
-        const p = findPath(u.x, u.y, tx, ty, unitRadius(u));
+        const p = findPath(u.x, u.y, tx, ty, unitRadius(u), u);
         if (p && p.length) {
           u.path = p; u.pathGoal = { x: tx, y: ty };
           gx = p[0].x; gy = p[0].y;
@@ -2777,7 +2850,7 @@ function engage(u, target, dt) {
   }
 }
 function updateUnit(u, dt) {
-  u.dbgBlocked = walkBlocked(Math.floor(u.x), Math.floor(u.y), unitRadius(u));
+  u.dbgBlocked = trulyStuck(u);
   // 锚点式卡死检测：每 0.5 秒和锚点比位移，避免「被推挤来回抖动」时逐帧位移过大而漏判
   if (!u.stuckAnchor) u.stuckAnchor = { x: u.x, y: u.y, t: 0 };
   u.stuckAnchor.t += dt;
@@ -2788,7 +2861,11 @@ function updateUnit(u, dt) {
     else u.stillT = 0;
     u.stuckAnchor = { x: u.x, y: u.y, t: 0 };
   }
-  if ((u.stillT || 0) >= 3) {
+  // 强制位移：2 秒没动且脚下是阻挡格 -> 无视碰撞，直接送到空地
+  if ((u.stillT || 0) >= 2 && trulyStuck(u)) {
+    u.stillT = 0;
+    ensureNotBlocked(u);
+  } else if ((u.stillT || 0) >= 3) {
     u.stillT = 0;
     const free = nearestFreeSpot(u.x, u.y, 5, unitRadius(u));
     if (free) {
@@ -3648,6 +3725,14 @@ function placeBuilding() {
   if (!S.placing) return;
   const { type, tx, ty, valid } = S.placing;
   if (!valid) {
+    const d = B[type];
+    const unitInWay = d && S.units.some(u => u.hp > 0 && !u.garrisoned
+      && u.x > tx - .3 && u.x < tx + d.w + .3 && u.y > ty - .3 && u.y < ty + d.d + .3);
+    if (unitInWay) {
+      toast('有单位阻挡：先让部队走开再放下建筑', 'warn', 'wall');
+      Sound.play('ui');
+      return;
+    }
     if (!playerHasKeep()) toast('请先展开基地车，建立主堡后才能建造建筑', 'warn', 'workshop');
     else if (B[type] && !buildingTierUnlocked(type)) {
       const req = tierRequirement(type);
@@ -7691,7 +7776,10 @@ window.IronCrown = {
   terrainAt: (x, y) => terrainAt(x, y),
   requestSupport: () => requestSupport(),
   infiltrate: (spy, b) => attemptInfiltrate(spy, b),
-  narrowSlit: (x, y, r) => narrowSlitAt(x, y, r === undefined ? .34 : r)
+  narrowSlit: (x, y, r) => narrowSlitAt(x, y, r === undefined ? .34 : r),
+  blockedAtPoint: (x, y) => blockedAt(x, y, { type: 'spearman' }),
+  trulyStuckAt: (x, y) => insideBuildingAt(x, y, .01)
+    || terrainAt(x, y) === 'water' || narrowSlitAt(Math.floor(x), Math.floor(y), .05),
 };
 
 const params = new URLSearchParams(location.search);
