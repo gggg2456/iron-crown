@@ -1671,6 +1671,20 @@ function resetWorld() {
   }
   S.enemyMods = { ...L.mods };
   S.wave = { n: 0, timer: Math.max(30, DIFFS[S.diffKey].first + L.firstAdd) };
+  // 战术模式下，两个敌对 AI 强制不同阵营：一攻一守 / 一正一奇
+  if (S.run === 'skirmish' && S.aiPersonality === 'smart') {
+    const pt = playerTeamOf(S.slots);
+    const hostiles = S.slots.filter(x => x && x.owner === 'ai' && x.team !== pt);
+    if (hostiles.length > 1) {
+      const first = hostiles[0].faction;
+      const rotate = { rose: 'pine', pine: 'raven', raven: 'rose' };
+      for (let i = 1; i < hostiles.length; i++) {
+        if (hostiles[i].faction === hostiles[i - 1].faction) {
+          hostiles[i].faction = rotate[hostiles[i - 1].faction] || 'pine';
+        }
+      }
+    }
+  }
   // One AIPlayer instance per roster slot that is run by a computer.
   for (const slot of S.slots) slot.ai = null;
   S.aiPrimary = null; S.aiAlly = null;
@@ -1700,10 +1714,11 @@ function resetWorld() {
     }
   }
   if (!S.aiPrimary) S.aiPrimary = new AIPlayer({ slot: -1, team: ENEMY, kind: 'primary' });
-  S.aiPrimary.super = (S.run === 'skirmish' && S.supersEnabled) ? {
-    key: ['fire', 'storm', 'plague'][Math.floor(Math.random() * 3)],
-    timer: 90, built: false
-  } : null;
+  S.aiPrimary.super = (S.run === 'skirmish' && S.supersEnabled)
+    ? (S.aiPersonality === 'smart'
+      ? { key: (FACTIONS[S.aiPrimary.faction] || FACTIONS.raven).super, timer: 90, built: false }
+      : { key: ['fire', 'storm', 'plague'][Math.floor(Math.random() * 3)], timer: 90, built: false })
+    : null;
   // S.teams is the runtime roster: config slots plus the commander driving each of them.
   S.teams = S.slots;
   if (S.aiSecond) {
