@@ -981,6 +981,10 @@ function generateTerrain() {
     }
   }
   S.throneT = 0;
+  S.terrainList = Object.keys(S.terrain).map(k => {
+    const [x, y] = k.split(',').map(Number);
+    return [x, y, S.terrain[k]];
+  });
 
   // Keep base areas buildable regardless of the chosen map.
   const bases = [[8.5, 32.5, 5.8], [S.enemySite.x + 1.5, S.enemySite.y + 1.5, 6.4]];
@@ -1803,6 +1807,43 @@ function paintMap() {
         g.closePath(); g.fill();
         g.fillStyle = 'rgba(118,130,75,.2)';
         g.beginPath(); g.ellipse(p.x + (n - .5) * 20, p.y + 8, rnd(2, 6), rnd(1, 2.5), 0, 0, 7); g.fill();
+      } else if (terr === 'highland') {
+        // 高地：抬升的地块 + 左上高光 / 右下阴影，形成台阶感
+        g.fillStyle = 'rgba(126,140,88,.55)';
+        g.beginPath();
+        g.moveTo(p.x, p.y); g.lineTo(p.x + HW + .4, p.y + HH);
+        g.lineTo(p.x, p.y + TILE_H + .4); g.lineTo(p.x - HW - .4, p.y + HH);
+        g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(232,222,170,.5)'; g.lineWidth = 1.4;
+        g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(p.x - HW, p.y + HH); g.stroke();
+        g.strokeStyle = 'rgba(20,18,12,.55)'; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(p.x - HW, p.y + HH); g.lineTo(p.x, p.y + TILE_H); g.lineTo(p.x + HW, p.y + HH); g.stroke();
+        g.strokeStyle = 'rgba(240,230,180,.18)'; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(p.x + 6, p.y + HH * .5); g.lineTo(p.x + HW * .5, p.y + HH * 1.2); g.stroke();
+      } else if (terr === 'ash') {
+        g.fillStyle = 'rgba(34,28,24,.82)';
+        g.beginPath();
+        g.moveTo(p.x, p.y); g.lineTo(p.x + HW + .4, p.y + HH);
+        g.lineTo(p.x, p.y + TILE_H + .4); g.lineTo(p.x - HW - .4, p.y + HH);
+        g.closePath(); g.fill();
+        for (let i = 0; i < 3; i++) {
+          const a = hash(x * 7 + i, y * 3 + i);
+          g.fillStyle = a > .55 ? 'rgba(120,36,26,.5)' : 'rgba(70,64,58,.55)';
+          g.beginPath();
+          g.ellipse(p.x + (a - .5) * 26, p.y + 6 + (a - .5) * 12, 2 + a * 4, 1.2 + a * 2, 0, 0, 7);
+          g.fill();
+        }
+      } else if (terr === 'throne') {
+        g.fillStyle = 'rgba(96,76,32,.6)';
+        g.beginPath();
+        g.moveTo(p.x, p.y); g.lineTo(p.x + HW + .4, p.y + HH);
+        g.lineTo(p.x, p.y + TILE_H + .4); g.lineTo(p.x - HW - .4, p.y + HH);
+        g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(246,222,150,.75)'; g.lineWidth = 1.6;
+        g.beginPath();
+        g.moveTo(p.x, p.y + 4); g.lineTo(p.x + HW - 4, p.y + HH);
+        g.lineTo(p.x, p.y + TILE_H - 4); g.lineTo(p.x - HW + 4, p.y + HH);
+        g.closePath(); g.stroke();
       } else if (terr === 'road') {
         g.fillStyle = theme.road;
         g.beginPath();
@@ -5502,6 +5543,7 @@ function render(now) {
   drawSuperFx();
   drawProjectiles();
   drawParticles();
+  drawTerrainFx();
   drawHelpMark();
   drawFog();
   // selection rectangle
@@ -5532,6 +5574,42 @@ function requestSupport() {
 function viewCenterWorld() {
   const c = viewCenter();
   return screenToWorld(c.x, c.y);
+}
+/* 地形动态反馈：沼泽气泡、灰烬余烬、王座光环。只画视野内的格子。 */
+function drawTerrainFx() {
+  if (!S.terrainList || !S.terrainList.length) return;
+  const t = S.time;
+  for (const [tx, ty, type] of S.terrainList) {
+    if (type !== 'marsh' && type !== 'ash' && type !== 'throne') continue;
+    const p = worldToScreen(tx + .5, ty + .5);
+    if (p.x < -80 || p.x > VW + 80 || p.y < -80 || p.y > VH + 80) continue;
+    const seed = hash(tx, ty);
+    if (type === 'marsh') {
+      const ph = (t * .55 + seed * 7) % 1;
+      ctx.globalAlpha = (1 - ph) * .45;
+      ctx.fillStyle = 'rgba(186,214,160,.85)';
+      ctx.beginPath();
+      ctx.ellipse(p.x + Math.sin(ph * 5 + seed * 9) * 7, p.y + HH * .55 - ph * 9,
+        2 + ph * 3, 1 + ph * 1.6, 0, 0, 7);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (type === 'ash') {
+      const ph = (t * .8 + seed * 5) % 1;
+      ctx.globalAlpha = (1 - ph) * .6;
+      ctx.fillStyle = ph < .5 ? 'rgba(226,96,52,.9)' : 'rgba(240,180,90,.8)';
+      ctx.beginPath();
+      ctx.arc(p.x + Math.sin(seed * 21 + ph * 4) * 10, p.y + HH * .5 - ph * 18, 1.2 + (1 - ph), 0, 7);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else {
+      const pulse = .5 + .5 * Math.sin(t * 2.2 + seed * 3);
+      ctx.strokeStyle = 'rgba(246,222,150,' + (.25 + .4 * pulse).toFixed(3) + ')';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y + HH * .5, HW * (.55 + .12 * pulse), HH * (.55 + .12 * pulse), 0, 0, 7);
+      ctx.stroke();
+    }
+  }
 }
 function drawHelpMark() {
   const m = S.helpMark;
@@ -6567,7 +6645,8 @@ function bindUI() {
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
-  canvas.addEventListener('pointerleave', () => { S.mouse.inside = false; els.cursorTip.classList.remove('show'); });
+  canvas.addEventListener('pointerleave', () => { S.mouse.inside = false;
+    const tt = document.getElementById('terrain-tip'); if (tt) tt.hidden = true; els.cursorTip.classList.remove('show'); });
   canvas.addEventListener('wheel', onWheel, { passive: false });
   document.addEventListener('contextmenu', e => e.preventDefault());
   window.addEventListener('resize', resize);
@@ -6702,12 +6781,29 @@ function onPointerDown(e) {
   }
   S.drag = { sx: e.clientX, sy: e.clientY, active: false, add: e.shiftKey };
 }
+const TERRAIN_TIPS = {
+  highland: '高地：远程射程 +1',
+  marsh: '沼泽：移速 -20%（重甲 -40%）',
+  ash: '灰烬：伤害 +10%，每秒 -1 生命',
+  throne: '王座：全队每 5 秒回 2 生命'
+};
+function updateTerrainTip(w, cx, cy) {
+  const el = document.getElementById('terrain-tip');
+  if (!el) return;
+  const tip = (S.selected.length || S.selectedBuilding) ? TERRAIN_TIPS[terrainAt(w.x, w.y)] : null;
+  if (!tip) { el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = tip;
+  el.style.left = (cx + 16) + 'px';
+  el.style.top = (cy + 18) + 'px';
+}
 function onPointerMove(e) {
   if (TOUCH_UI && e.pointerType === 'touch') return;
   const r = canvas.getBoundingClientRect();
   S.mouse.x = e.clientX - r.left; S.mouse.y = e.clientY - r.top; S.mouse.inside = true;
   const w = screenToWorld(S.mouse.x, S.mouse.y);
   S.mouse.wx = w.x; S.mouse.wy = w.y;
+  if (!S.placing) updateTerrainTip(w, e.clientX, e.clientY);
   if (S.panning) {
     S.cam.x += e.clientX - S.panning.x; S.cam.y += e.clientY - S.panning.y;
     S.panning.x = e.clientX; S.panning.y = e.clientY; clampCamera();
@@ -7093,6 +7189,8 @@ window.IronCrown = {
   kill: (t) => kill(t),
   spectate: () => enterSpectate(),
   superAt: (key, x, y, team) => applySuperAt(key, x, y, team),
+  walkBlocked: (tx, ty, r) => walkBlocked(tx, ty, r === undefined ? .34 : r),
+  terrainAt: (x, y) => terrainAt(x, y),
   requestSupport: () => requestSupport()
 };
 

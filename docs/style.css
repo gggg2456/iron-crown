@@ -627,3 +627,10 @@ body.touch-ui .sel-actions { gap: 6px; flex-wrap: wrap; }
 .help-btn { color: #9de0bd; }
 .help-btn:hover { color: #c7ffe4; }
 body.touch-ui .help-btn { display: flex; }
+/* ---- 地形悬停标签（v1.9.0）---- */
+.terrain-tip {
+  position: fixed; z-index: 60; pointer-events: none;
+  padding: 3px 7px; border: 1px solid rgba(213,179,110,.38); border-radius: 3px;
+  background: rgba(10,12,10,.82); color: #e8dcb8;
+  font-family: var(--font-en); font-size: 11px; letter-spacing: .04em; white-space: nowrap;
+}
