@@ -173,6 +173,7 @@ function renderSlotTable() {
 /* v2.0.0 AI 性格：默认 classic 完全走原逻辑，只有 ?aipersonality=smart 才启用。 */
 const AI_PROFILES = {
   rose: {
+    kind: 'push',
     label: '赤蔷薇 · 正面推进',
     waveMul: 1.35, waveEvery: 1.0, requireTowers: 0,
     waveUnits: [['knight', .45], ['swordsman', .35], ['archer', .12], ['lancer', .08]],
@@ -182,6 +183,7 @@ const AI_PROFILES = {
     trainUnits: [['knight', .4], ['swordsman', .4], ['archer', .2]]
   },
   pine: {
+    kind: 'turtle',
     label: '青杉 · 防守反击',
     waveMul: .7, waveEvery: .6, requireTowers: 2,
     waveUnits: [['archer', .45], ['crossbowman', .3], ['swordsman', .25]],
@@ -192,6 +194,7 @@ const AI_PROFILES = {
     trainUnits: [['archer', .5], ['crossbowman', .3], ['swordsman', .2]]
   },
   raven: {
+    kind: 'harass',
     label: '黑鸦 · 多线骚扰',
     waveMul: .9, waveEvery: .8, requireTowers: 0,
     waveUnits: [['dog', .38], ['lancer', .3], ['shaman', .16], ['assassin', .16]],
@@ -837,6 +840,10 @@ const TERRAIN_PATCHES = {
   ash:      { highland: [[20, 30, 2.6]], ash: [[12, 20, 3.4], [30, 40, 2.6]] },
   throne:   { highland: [[16, 16, 2.6], [40, 40, 2.6]], ash: [[40, 16, 2.2]], throne: [27, 27] }
 };
+/* 可炸桥梁：只有沼泽图有，横跨中央水塘 */
+const TERRAIN_BRIDGES = {
+  marsh: [{ x1: 26, x2: 36, y1: 27, y2: 27, hp: 620 }]
+};
 const HEAVY_TERRAIN_UNITS = new Set(['knight', 'ram', 'catapult', 'scorpion', 'baseVehicle']);
 function terrainSpeedAt(u, terr) {
   const t = terr === undefined ? terrainAt(u.x, u.y) : terr;
@@ -1025,6 +1032,24 @@ function generateTerrain() {
     }
   }
   S.throneT = 0;
+  // 桥梁：把水面改成可通行的桥面，并登记可摧毁属性
+  S.bridges = [];
+  for (const def of (TERRAIN_BRIDGES[S.mapTheme] || [])) {
+    const tiles = [];
+    for (let x = def.x1; x <= def.x2; x++) {
+      for (let y = def.y1; y <= def.y2; y++) {
+        if (S.terrain[x + ',' + y] !== 'water') continue;
+        S.terrain[x + ',' + y] = 'bridge';
+        tiles.push([x, y]);
+      }
+    }
+    if (tiles.length) {
+      S.bridges.push({ tiles, hp: def.hp, maxHp: def.hp,
+        x: tiles[0][0], y: tiles[0][1],
+        cx: tiles.reduce((n, t) => n + t[0] + .5, 0) / tiles.length,
+        cy: tiles.reduce((n, t) => n + t[1] + .5, 0) / tiles.length });
+    }
+  }
   S.terrainList = Object.keys(S.terrain).map(k => {
     const [x, y] = k.split(',').map(Number);
     return [x, y, S.terrain[k]];
@@ -1906,6 +1931,22 @@ function paintMap() {
         g.moveTo(p.x, p.y + 4); g.lineTo(p.x + HW - 4, p.y + HH);
         g.lineTo(p.x, p.y + TILE_H - 4); g.lineTo(p.x - HW + 4, p.y + HH);
         g.closePath(); g.stroke();
+      } else if (terr === 'bridge') {
+        g.fillStyle = 'rgba(96,74,44,.95)';
+        g.beginPath();
+        g.moveTo(p.x, p.y); g.lineTo(p.x + HW + .4, p.y + HH);
+        g.lineTo(p.x, p.y + TILE_H + .4); g.lineTo(p.x - HW - .4, p.y + HH);
+        g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(52,38,22,.9)'; g.lineWidth = 1.4;
+        for (let i = 1; i < 4; i++) {
+          const q = i / 4;
+          g.beginPath();
+          g.moveTo(p.x - HW + HW * q * 2, p.y + HH * q);
+          g.lineTo(p.x + HW * q * 2, p.y + HH + HH * q);
+          g.stroke();
+        }
+        g.strokeStyle = 'rgba(214,186,132,.55)'; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(p.x - HW + 2, p.y + HH); g.lineTo(p.x, p.y + TILE_H - 2); g.stroke();
       } else if (terr === 'road') {
         g.fillStyle = theme.road;
         g.beginPath();
@@ -3067,6 +3108,10 @@ function updateProjectiles(dt) {
           if (Math.hypot(e.x - p.tx, e.y - p.ty) > p.splash) continue;
           damage(e, p.dmg * .55, p.source);
         }
+        for (const br of (S.bridges || [])) {
+          if (Math.hypot(br.cx - p.tx, br.cy - p.ty) > p.splash + 1.6) continue;
+          damageBridge(br, p.dmg * .8, p.source);
+        }
         burst(p.tx, p.ty, 'dust', 18);
         Sound.play('boom');
       } else burst(p.tx, p.ty, 'spark', 3);
@@ -3647,7 +3692,13 @@ function launchWaveSmart() {
   S.wave.n++;
   if (!S.aiTimes.firstWave) S.aiTimes.firstWave = Math.round(S.time);
   const share = hostileAICount() > 1 ? 1.5 : 1;
-  const size = Math.round((diff.base + Math.floor(S.wave.n * diff.grow) + (L.extra || 0)) * share * prof.waveMul);
+  let size = Math.round((diff.base + Math.floor(S.wave.n * diff.grow) + (L.extra || 0)) * share * prof.waveMul);
+  // 黑鸦（骚扰）保底 6 个编成，不参与平均分摊；其余人分剩下的池子
+  const harassFloor = 6;
+  const harassAlive = S.slots.some(sl => sl && sl.owner === 'ai' && sl.ai
+    && sl.ai !== (S.aiPrimary || null) && sl.ai.prof && sl.ai.prof.kind === 'harass');
+  if (prof.kind === 'harass') size = Math.max(size, harassFloor);
+  else if (harassAlive) size = Math.max(0, size - harassFloor);
   const barracks = S.buildings.find(b => b.team === ENEMY && b.type === 'barracks');
   const units = [];
   for (let i = 0; i < Math.max(1, size); i++) {
@@ -3843,7 +3894,10 @@ class AIPlayer {
     this.nextTrain = (this.nextTrain === undefined ? 8 : this.nextTrain) - dt;
     if (this.nextTrain <= 0) {
       this.nextTrain = prof.trainEvery * rnd(.85, 1.15);
-      if (this.allTeamUnits().length < prof.trainMax) {
+      const ownCount = this.units().length;
+      const underCap = this.allTeamUnits().length < prof.trainMax;
+      const floorOk = prof.kind === 'harass' && ownCount < 6;   // 骚扰保底编成
+      if (underCap || floorOk) {
         const base = this.structures('barracks');
         if (base) {
           const type = pickWeighted(prof.trainUnits);
@@ -4238,6 +4292,34 @@ class AIPlayer {
       }
     }
   }
+}
+function bridgeAt(x, y) {
+  return (S.bridges || []).find(b => b.tiles.some(([tx, ty]) => tx === Math.floor(x) && ty === Math.floor(y))) || null;
+}
+function damageBridge(b, amount, source) {
+  if (!b || b.hp <= 0) return;
+  b.hp -= amount;
+  burst(b.cx, b.cy, 'dust', 10);
+  Sound.play('hit');
+  if (b.hp <= 0) collapseBridge(b);
+}
+function collapseBridge(b) {
+  for (const [x, y] of b.tiles) S.terrain[x + ',' + y] = 'water';
+  for (const u of S.units) {
+    if (u.hp <= 0 || u.garrisoned) continue;
+    if (!b.tiles.some(([x, y]) => Math.floor(u.x) === x && Math.floor(u.y) === y)) continue;
+    const free = nearestFreeSpot(u.x, u.y, 5, unitRadius(u));
+    if (free) { u.x = free.x; u.y = free.y; u.path = null; u.pathGoal = null; }
+  }
+  S.bridges = (S.bridges || []).filter(x => x !== b);
+  S.terrainList = Object.keys(S.terrain).map(k => {
+    const [x, y] = k.split(',').map(Number);
+    return [x, y, S.terrain[k]];
+  });
+  paintMap();
+  toast('桥梁被摧毁！这条通路断了', 'warn', 'wall');
+  Sound.play('boom');
+  burst(b.cx, b.cy, 'rubble', 18);
 }
 function nudgeUnitsOut(tx, ty, w, d) {
   for (const u of S.units) {
@@ -6207,6 +6289,10 @@ function applySuperAt(key, x, y, caster) {
     if (Math.hypot(b.x - x, b.y - y) > sup.radius + 1) continue;
     damage(b, sup.buildDmg, null); hits++;
   }
+  for (const br of (S.bridges || [])) {
+    if (Math.hypot(br.cx - x, br.cy - y) > sup.radius + 2) continue;
+    damageBridge(br, sup.buildDmg * .5, null);
+  }
   burst(x, y, 'fire', 36); burst(x, y, 'dust', 30); burst(x, y, 'spark', 26);
   S.superFx.push({ x, y, t: 0, dur: 1.8, kind: key });
   return hits;
@@ -7465,6 +7551,8 @@ window.IronCrown = {
   kill: (t) => kill(t),
   spectate: () => enterSpectate(),
   superAt: (key, x, y, team) => applySuperAt(key, x, y, team),
+  bridges: () => (S.bridges || []).map(b => ({ hp: b.hp, maxHp: b.maxHp, tiles: b.tiles.length, cx: b.cx, cy: b.cy })),
+  damageBridge: (i, amount) => { const b = (S.bridges || [])[i]; if (b) damageBridge(b, amount, null); },
   walkBlocked: (tx, ty, r) => walkBlocked(tx, ty, r === undefined ? .34 : r),
   terrainAt: (x, y) => terrainAt(x, y),
   requestSupport: () => requestSupport()
