@@ -3635,7 +3635,10 @@ function tryTrain(type, n = 1) {
     S.gold -= cost;
     line.queue.push({ type, elapsed: 0, total: trainSecondsFaction(type), producer: pro.id });
     added++;
+    if (!tryTrain._pending) tryTrain._pending = 0;
+    tryTrain._pending += cost;
   }
+  if (tryTrain._pending) { goldFeedback(-tryTrain._pending); tryTrain._pending = 0; }
   if (!added) {
     if (line.queue.length + (line.cur ? 1 : 0) >= cap) toast('该产线已排满，等待出兵后再排', 'warn', 'sword');
     else if (def.hero && (heroAlive() || heroInProduction())) toast('英雄已在场或正在受封', 'warn', 'hero');
@@ -3826,6 +3829,27 @@ function revertMilitia(u) {
   u.militiaOldMax = 0;
   if (u.gatherOrder) { u.order = u.gatherOrder; u.gatherOrder = null; }
 }
+/* 红警式资金反馈：顶部金币同时飘字 + 抖一下，让「钱花出去/退回来」看得见 */
+function goldFeedback(delta) {
+  if (!delta) return;
+  const el = document.getElementById('gold-value');
+  if (!el) return;
+  const chip = el.closest('.resource') || el;
+  const r = chip.getBoundingClientRect();
+  const span = document.createElement('span');
+  const pos = delta > 0;
+  span.className = 'gold-float ' + (pos ? 'pos' : 'neg');
+  span.textContent = (pos ? '+' : '-') + Math.abs(Math.round(delta));
+  span.style.left = (r.left + r.width / 2) + 'px';
+  span.style.top = (r.top + r.height * .55) + 'px';
+  document.body.appendChild(span);
+  setTimeout(() => span.remove(), 950);
+  chip.classList.remove('gold-hit-neg', 'gold-hit-pos');
+  void chip.offsetWidth;                    // 重启抖动动画
+  chip.classList.add(pos ? 'gold-hit-pos' : 'gold-hit-neg');
+  clearTimeout(goldFeedback._t);
+  goldFeedback._t = setTimeout(() => chip.classList.remove('gold-hit-neg', 'gold-hit-pos'), 420);
+}
 function queueBuilding(type) {
   if (S.mode !== 'playing' || S.paused) return;
   if (isSuperKey(type) && !factionSuperMatch(type)) {
@@ -3851,6 +3875,7 @@ function queueBuilding(type) {
   const bCost = buildingCostFaction(type);
   if (S.gold < bCost) { toast('金币不足', 'warn', 'coin'); Sound.play('ui'); return; }
   S.gold -= bCost;
+  goldFeedback(-bCost);
   const item = { type, elapsed: 0, total: buildSecondsFaction(type), ready: false };
   if (!q.cur) q.cur = item; else q.queue.push(item);
   toast(`${def.name}进入建造队列 · ${item.total} 秒`, '', 'wall');
@@ -3864,6 +3889,7 @@ function cancelBuild(type) {
   const cost = B[type].cost;
   if (q.cur && q.cur.type === type) {
     S.gold += cost;
+    goldFeedback(cost);
     q.cur = q.queue.length ? q.queue.shift() : null;
     toast(`${B[type].name}已取消建造，退回 ${cost} 金币`, '', 'coin');
     Sound.play('ui');
@@ -3873,6 +3899,7 @@ function cancelBuild(type) {
   const idx = q.queue.findIndex(it => it.type === type);
   if (idx >= 0) {
     S.gold += cost;
+    goldFeedback(cost);
     q.queue.splice(idx, 1);
     toast(`${B[type].name}已移出建造队列，退回 ${cost} 金币`, '', 'coin');
     Sound.play('ui');
@@ -3890,6 +3917,7 @@ function cancelTrain(type) {
   const cost = def.cost;
   if (line.cur && line.cur.type === type) {
     S.gold += cost;
+    goldFeedback(cost);
     line.cur = line.queue.length ? line.queue.shift() : null;
     toast(`${def.name}已取消训练，退回 ${cost} 金币`, '', 'coin');
     Sound.play('ui'); updateHud(true); renderQueue(); updateCards();
@@ -3898,6 +3926,7 @@ function cancelTrain(type) {
   const idx = line.queue.findIndex(it => it.type === type);
   if (idx >= 0) {
     S.gold += cost;
+    goldFeedback(cost);
     line.queue.splice(idx, 1);
     toast(`${def.name}已移出训练队列，退回 ${cost} 金币`, '', 'coin');
     Sound.play('ui'); updateHud(true); renderQueue(); updateCards();
@@ -3997,12 +4026,16 @@ function placeBuilding() {
   const def = B[type];
   S.trees = S.trees.filter(t => !(t.x > tx - .8 && t.x < tx + def.w + .8 && t.y > ty - .8 && t.y < ty + def.d + .8));
   S.props = S.props.filter(p => !(p.x > tx - .8 && p.x < tx + def.w + .8 && p.y > ty - .8 && p.y < ty + def.d + .8));
-  const b = addBuilding(type, tx, ty, PLAYER, { underConstruction: true });
-  burst(b.x, b.y, 'dust', 16);
+  // 排队阶段已经等于建造阶段：落地即满血、立即生效，只保留 0.5 秒「拔地而起」的观感
+  const b = addBuilding(type, tx, ty, PLAYER);
+  b.constructed = true;
+  b.progress = 1;
+  b.rise = performance.now();
+  burst(b.x, b.y, 'dust', 20);
+  burst(b.x, b.y, 'gold', 6);
   Sound.play('buildPlace');
-  const grow = Math.max(1, Math.round(BUILD_TIME[type] || 4));
-  floatText(b.x, b.y, `${def.name}开工`, '#e8cf94');
-  toast(`${def.name}开始施工 · 约 ${grow} 秒`, '', 'castle');
+  floatText(b.x, b.y, `${def.name}已建成`, '#f0d18a');
+  toast(`${def.name}落成 · 立即生效`, '', 'castle');
   cancelPlacement(true);
   if (S.buildQ.cur) S.buildQ.cur = null;
   if (S.buildQ.queue.length) S.buildQ.cur = S.buildQ.queue.shift();
@@ -5354,6 +5387,17 @@ function drawBuilding(b, now, ghost = false) {
     drawConstruction(b, now);
     ctx.restore();
     return;
+  }
+  // 落成动画：0.5 秒内从地面"长"出来，纯视觉，功能早已生效
+  if (!ghost && b.rise) {
+    const k = (performance.now() - b.rise) / 500;
+    if (k >= 1) b.rise = 0;
+    else {
+      const e = k * (2 - k);          // ease-out
+      ctx.translate(0, 0);
+      ctx.scale(1, .18 + .82 * e);
+      ctx.globalAlpha *= .55 + .45 * e;
+    }
   }
   if (b.type === 'keep') drawKeep(b, now);
   else if (b.type === 'house') drawHouse(b, now);
@@ -6756,6 +6800,7 @@ if (t && t.isSuper && !factionSuperMatch(key)) {
   }
   if (S.gold < t.cost) { toast('金币不足', 'warn', 'coin'); Sound.play('ui'); return; }
   S.gold -= t.cost;
+  goldFeedback(-t.cost);
   S.tech[key] = true;
   if (t.isSuper) {
     S.superKey = t.superKey;
@@ -7451,6 +7496,7 @@ function repairBuilding(b) {
   const cost = Math.ceil(missing * .6);
   if (S.gold < cost) { toast(`维修需要 ${cost} 金币`, 'warn', 'coin'); Sound.play('ui'); return; }
   S.gold -= cost; b.hp = b.maxHp;
+  goldFeedback(-cost);
   floatText(b.x, b.y, `维修 -${cost}`, '#e7c982');
   Sound.play('buildPlace');
   updateHud(true); updateSelectionPanel(true);
@@ -7465,6 +7511,7 @@ function sellBuilding(b) {
   if (S.inspect === b) S.inspect = null;
   S.selected = units;
   S.gold += refund;
+  goldFeedback(refund);
   floatText(b.x, b.y, `拆除 +${refund}`, '#e7c982');
   toast(`已拆除${bname(b)}，回收 ${refund} 金币`, '', 'coin');
   Sound.play('buildCancel');
@@ -8165,6 +8212,17 @@ window.IronCrown = {
   tutSkip: () => tutSkip(),
   superBuilding: () => (S.superKey && SUPERS[S.superKey]) ? SUPERS[S.superKey].building : null,
   damageStage: (b) => damageStageOf(b),
+  economy: {
+    hud: () => updateHud(true),
+    queue: (t) => queueBuilding(t),
+    cancel: (t) => cancelBuild(t),
+    train: (t, n) => tryTrain(t, n === undefined ? 1 : n),
+    cancelTrain: (t) => cancelTrain(t),
+    startPlacement: (t) => startPlacement(t),
+    place: () => placeBuilding(),
+    placing: () => (S.placing ? { tx: S.placing.tx, ty: S.placing.ty, type: S.placing.type } : null),
+    setPlacing: (tx, ty, valid) => { if (!S.placing) return false; S.placing.tx = tx; S.placing.ty = ty; S.placing.valid = valid; return true; }
+  },
   rubbleCount: () => (S.props || []).filter(p => p.kind === 'rubble').length,
   tutEmit: (n, d) => tutEmit(n, d),
   orderMove: (u, x, y) => orderMove(u, x, y),

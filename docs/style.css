@@ -889,3 +889,36 @@ body[data-faction="raven"] { --faction: 62,48,78;   --faction-bright: #d9c6f2; }
   body.touch-ui .tut-skip { min-height: 34px; padding: 6px 14px; font-size: 12px; }
   body.touch-ui .tut-foot { gap: 10px; }
 }
+
+/* ===== v2.1.8 资金流动反馈 ===== */
+#gold-value { display: inline-block; transition: color .12s ease, transform .12s ease; }
+@keyframes goldHitNeg {
+  0%   { transform: translateY(0) scale(1);      color: #ffd7cf; }
+  25%  { transform: translateY(1px) scale(1.12); color: #ff8f7a; }
+  55%  { transform: translateY(-1px) scale(1.04); color: #ffb9a6; }
+  100% { transform: translateY(0) scale(1);      color: inherit; }
+}
+@keyframes goldHitPos {
+  0%   { transform: translateY(0) scale(1);      color: #d9ffd9; }
+  25%  { transform: translateY(-1px) scale(1.12); color: #7ef0a0; }
+  55%  { transform: translateY(1px) scale(1.04); color: #a8ffc2; }
+  100% { transform: translateY(0) scale(1);      color: inherit; }
+}
+.resource.gold-hit-neg #gold-value { animation: goldHitNeg .4s ease-out; }
+.resource.gold-hit-pos #gold-value { animation: goldHitPos .4s ease-out; }
+.resource.gold-hit-neg, .resource.gold-hit-pos { border-color: rgba(255,220,180,.35); }
+
+.gold-float {
+  position: fixed; z-index: 9000; pointer-events: none;
+  transform: translate(-50%, 0);
+  font-family: var(--font-en); font-size: 15px; font-weight: 600; letter-spacing: .02em;
+  text-shadow: 0 2px 6px rgba(0,0,0,.8), 0 0 12px currentColor;
+  animation: goldFloatUp .95s cubic-bezier(.2,.7,.3,1) forwards;
+}
+.gold-float.neg { color: #ff8f7a; }
+.gold-float.pos { color: #86f0a8; }
+@keyframes goldFloatUp {
+  0%   { opacity: 0; transform: translate(-50%, 4px) scale(.86); }
+  18%  { opacity: 1; transform: translate(-50%, -6px) scale(1.06); }
+  100% { opacity: 0; transform: translate(-50%, -34px) scale(1); }
+}
